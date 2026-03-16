@@ -1,14 +1,15 @@
 ﻿import { useState, useEffect, useCallback } from "react";
 
-// ── Supabase client (inline, pas de package externe dans l'artifact) ──────────
 const SUPA_URL = "https://vumghyubyppcdaimitds.supabase.co";
 const SUPA_KEY = "sb_publishable_Ru4pet2VDNDWzN2PQdHq2g_rhqNwuG-";
 
-async function supa(path, opts = {}) {
+// ── Supabase ──────────────────────────────────────────────────────────────────
+async function supaFetch(path, opts = {}) {
+  const token = opts.token || SUPA_KEY;
   const res = await fetch(SUPA_URL + "/rest/v1/" + path, {
     headers: {
       "apikey": SUPA_KEY,
-      "Authorization": "Bearer " + SUPA_KEY,
+      "Authorization": "Bearer " + token,
       "Content-Type": "application/json",
       "Prefer": opts.prefer || "return=representation",
       ...opts.headers
@@ -16,42 +17,46 @@ async function supa(path, opts = {}) {
     method: opts.method || "GET",
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || "Supabase error " + res.status);
-  }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Erreur " + res.status); }
   if (res.status === 204) return null;
   return res.json();
 }
 
 const db = {
-  getPatients: () => supa("patients?select=*&order=created_at.desc"),
-  addPatient: (p) => supa("patients", { method: "POST", body: p }),
-  updatePatient: (id, p) => supa("patients?id=eq." + id, { method: "PATCH", body: p }),
-  deletePatient: (id) => supa("patients?id=eq." + id, { method: "DELETE", prefer: "return=minimal" }),
-  getPlans: (patientId) => supa("plans?patient_id=eq." + patientId + "&order=created_at.desc"),
-  addPlan: (p) => supa("plans", { method: "POST", body: p }),
-  getNotes: (patientId) => supa("consult_notes?patient_id=eq." + patientId + "&order=created_at.desc"),
-  addNote: (n) => supa("consult_notes", { method: "POST", body: n }),
+  login: (email, password) => fetch(SUPA_URL + "/auth/v1/token?grant_type=password", {
+    method: "POST",
+    headers: { "apikey": SUPA_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  }).then(r => r.json()),
+  logout: (token) => fetch(SUPA_URL + "/auth/v1/logout", {
+    method: "POST", headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + token }
+  }),
+  getPatients: (token) => supaFetch("patients?select=*&order=created_at.desc", { token }),
+  addPatient: (p, token) => supaFetch("patients", { method: "POST", body: p, token }),
+  updatePatient: (id, p, token) => supaFetch("patients?id=eq." + id, { method: "PATCH", body: p, token }),
+  deletePatient: (id, token) => supaFetch("patients?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
+  getPlans: (patientId, token) => supaFetch("plans?patient_id=eq." + patientId + "&order=created_at.desc", { token }),
+  addPlan: (p, token) => supaFetch("plans", { method: "POST", body: p, token }),
+  getNotes: (patientId, token) => supaFetch("consult_notes?patient_id=eq." + patientId + "&order=created_at.desc", { token }),
+  addNote: (n, token) => supaFetch("consult_notes", { method: "POST", body: n, token }),
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = ["#C4956A","#3D5A47","#7A9E7E","#8B5E3C","#5B7A8B","#9B6B8A","#6B8B6B"];
-const GOALS_FR = { perte_poids:"Perte de poids", reeducation:"Rééducation alimentaire", prise_masse:"Prise de masse", sante:"Santé générale", sport:"Performance sportive" };
-const ACTIVITE_FR = { sedentaire:"Sédentaire", leger:"Légèrement actif", modere:"Modérément actif", actif:"Très actif", sport_intense:"Sport intensif" };
-const DIET_FR = { vegetarien:"Végétarien", vegan:"Vegan", sans_gluten:"Sans gluten", sans_lactose:"Sans lactose", halal:"Halal", casher:"Casher", diabetique:"Diabétique" };
-const MEAL_NAMES = ["Petit-déjeuner","Déjeuner","Collation","Dîner"];
+const GOALS_FR = { perte_poids:"Perte de poids", reeducation:"Reeducation alimentaire", prise_masse:"Prise de masse", sante:"Sante generale", sport:"Performance sportive" };
+const ACTIVITE_FR = { sedentaire:"Sedentaire", leger:"Legerement actif", modere:"Moderement actif", actif:"Tres actif", sport_intense:"Sport intensif" };
+const DIET_FR = { vegetarien:"Vegetarien", vegan:"Vegan", sans_gluten:"Sans gluten", sans_lactose:"Sans lactose", halal:"Halal", casher:"Casher", diabetique:"Diabetique" };
+const MEAL_NAMES = ["Petit-dejeuner","Dejeuner","Collation","Diner"];
 
-const avatarColor = (id) => COLORS[Math.abs(id?.toString().split("").reduce((a,c)=>a+c.charCodeAt(0),0)||0) % COLORS.length];
+const avatarColor = (id) => COLORS[Math.abs((id||"").toString().split("").reduce((a,c)=>a+c.charCodeAt(0),0)) % COLORS.length];
 const initials = (p) => ((p.prenom||"?")[0]+(p.nom||"?")[0]).toUpperCase();
-const getAge = (ddn) => { if(!ddn) return "—"; const d=Math.floor((Date.now()-new Date(ddn))/(365.25*24*3600*1000)); return d+" ans"; };
-const calcBMI = (p,t) => { if(!p||!t) return "—"; return (p/Math.pow(t/100,2)).toFixed(1); };
+const getAge = (ddn) => { if(!ddn) return "-"; const d=Math.floor((Date.now()-new Date(ddn))/(365.25*24*3600*1000)); return d+" ans"; };
+const calcBMI = (p,t) => { if(!p||!t) return "-"; return (p/Math.pow(t/100,2)).toFixed(1); };
 const emptyDay = (i) => ({ label:"Jour "+(i+1), meals:MEAL_NAMES.map(name=>({name,content:""})) });
 const emptyManualPlan = (n) => Array.from({length:n},(_,i)=>emptyDay(i));
-
 const EMPTY_FORM = { prenom:"",nom:"",ddn:"",sexe:"",email:"",tel:"",taille:"",poids:"",poids_obj:"",objectif:"perte_poids",activite:"sedentaire",diets:[],antecedents:"",allergies:"",notes:"" };
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 const S = {
   app: { display:"flex", minHeight:"100vh", fontFamily:"'DM Sans',sans-serif", background:"#FAF7F2", color:"#3D3228" },
   sidebar: { width:260, minHeight:"100vh", background:"#2A2118", display:"flex", flexDirection:"column", position:"sticky", top:0, height:"100vh", flexShrink:0 },
@@ -96,7 +101,35 @@ const S = {
   planMealContent: { fontSize:13, color:"#3D3228", lineHeight:1.5 },
 };
 
-// ── Small components ──────────────────────────────────────────────────────────
+// ── Login page ────────────────────────────────────────────────────────────────
+function LoginPage({ onLogin, error, loading }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#FAF7F2", fontFamily:"'DM Sans',sans-serif" }}>
+      <div style={{ background:"white", borderRadius:20, padding:"48px 40px", width:"100%", maxWidth:400, boxShadow:"0 20px 60px rgba(42,33,24,0.12)", border:"1px solid #E8DDD0" }}>
+        <div style={{ textAlign:"center", marginBottom:36 }}>
+          <div style={{ fontFamily:"Georgia,serif", fontSize:28, color:"#2A2118", marginBottom:6 }}>SoDiet</div>
+          <div style={{ fontSize:11, color:"#C4956A", letterSpacing:"2px", textTransform:"uppercase" }}>Espace praticien</div>
+        </div>
+        <div style={S.formGroup}>
+          <label style={S.label}>Email</label>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="votre@email.com" style={{...S.input, width:"100%", boxSizing:"border-box"}}/>
+        </div>
+        <div style={{...S.formGroup, marginBottom:24}}>
+          <label style={S.label}>Mot de passe</label>
+          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" style={{...S.input, width:"100%", boxSizing:"border-box"}}/>
+        </div>
+        {error && <div style={{ background:"#fff0ee", border:"1px solid #f5c0b8", borderRadius:8, padding:"10px 14px", fontSize:12, color:"#c8503c", marginBottom:16 }}>{error}</div>}
+        <button onClick={()=>onLogin(email,password)} disabled={loading} style={{ width:"100%", padding:"12px", background:"#C4956A", color:"white", border:"none", borderRadius:10, fontSize:14, fontWeight:500, cursor:"pointer", fontFamily:"inherit" }}>
+          {loading ? "Connexion..." : "Se connecter"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Small reusable components ─────────────────────────────────────────────────
 function FormInput({label,type,value,onChange,placeholder}) {
   return <div style={S.formGroup}><label style={S.label}>{label}</label><input style={S.input} type={type||"text"} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""}/></div>;
 }
@@ -108,10 +141,10 @@ function SectionTitle({children}) {
 }
 function Spinner() {
   return (
-    <div style={{textAlign:"center",padding:"50px 20px"}}>
-      <style>{"@keyframes bounce{0%,80%,100%{transform:scale(0.6);opacity:0.4}40%{transform:scale(1);opacity:1}}"}</style>
+    <div style={{textAlign:"center",padding:"40px 20px"}}>
+      <style>{"@keyframes bn{0%,80%,100%{transform:scale(0.6);opacity:0.4}40%{transform:scale(1);opacity:1}}"}</style>
       <div style={{display:"flex",justifyContent:"center",gap:8}}>
-        {[0,200,400].map((d,i)=><div key={i} style={{width:10,height:10,borderRadius:"50%",background:"#C4956A",animation:"bounce 1.2s "+d+"ms infinite ease-in-out"}}/>)}
+        {[0,200,400].map((d,i)=><div key={i} style={{width:10,height:10,borderRadius:"50%",background:"#C4956A",animation:"bn 1.2s "+d+"ms infinite ease-in-out"}}/>)}
       </div>
     </div>
   );
@@ -144,7 +177,7 @@ function PatientCard({p,onClick}) {
         <div style={S.avatar(p.id)}>{initials(p)}</div>
         <div>
           <div style={{fontFamily:"Georgia,serif",fontSize:16,color:"#2A2118"}}>{p.prenom} {p.nom}</div>
-          <div style={{fontSize:12,color:"#8A7968"}}>{getAge(p.ddn)}{p.sexe?" · "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"Autre"):""}</div>
+          <div style={{fontSize:12,color:"#8A7968"}}>{getAge(p.ddn)}{p.sexe?" - "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"Autre"):""}</div>
         </div>
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
@@ -154,7 +187,7 @@ function PatientCard({p,onClick}) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,paddingTop:12,borderTop:"1px solid #F0EBE1"}}>
         {[["kg",p.poids],["IMC",bmi],["obj.",p.poids_obj]].map(([k,v])=>(
           <div key={k} style={{textAlign:"center"}}>
-            <div style={{fontSize:15,fontWeight:600,color:"#2A2118"}}>{v||"—"}</div>
+            <div style={{fontSize:15,fontWeight:600,color:"#2A2118"}}>{v||"-"}</div>
             <div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:1}}>{k}</div>
           </div>
         ))}
@@ -178,7 +211,7 @@ function ManualPlanEditor({days,tips,onDaysChange,onTipsChange}) {
               <div key={mi} style={{marginBottom:10}}>
                 <div style={S.planMealName}>{m.name}</div>
                 <textarea value={m.content} onChange={e=>updateMeal(di,mi,e.target.value)}
-                  placeholder={mi===0?"Ex: Yaourt nature, granola, fruits rouges":mi===1?"Ex: Poulet grillé, riz complet, salade":mi===2?"Ex: Pomme, amandes":"Ex: Saumon vapeur, haricots verts"}
+                  placeholder={mi===0?"Ex: Yaourt nature, granola":mi===1?"Ex: Poulet grille, riz complet":mi===2?"Ex: Pomme, amandes":"Ex: Saumon vapeur, haricots verts"}
                   style={{...S.textarea,minHeight:50,width:"100%",fontSize:12}}/>
               </div>
             ))}
@@ -186,14 +219,13 @@ function ManualPlanEditor({days,tips,onDaysChange,onTipsChange}) {
         </div>
       ))}
       <div style={S.formGroup}>
-        <label style={S.label}>💡 Conseils (optionnel)</label>
-        <textarea style={{...S.textarea,minHeight:55}} value={tips} onChange={e=>onTipsChange(e.target.value)} placeholder="Ex: bien s'hydrater, éviter les sucres raffinés…"/>
+        <label style={S.label}>Conseils (optionnel)</label>
+        <textarea style={{...S.textarea,minHeight:55}} value={tips} onChange={e=>onTipsChange(e.target.value)} placeholder="Ex: bien s'hydrater, eviter les sucres raffines..."/>
       </div>
     </div>
   );
 }
 
-// ── Profile view ──────────────────────────────────────────────────────────────
 function ProfileView({p,plans,notes,onBack,onEdit,onDelete,onGenPlan,onAddNote,loading}) {
   const bmi = calcBMI(p.poids,p.taille);
   return (
@@ -203,7 +235,7 @@ function ProfileView({p,plans,notes,onBack,onEdit,onDelete,onGenPlan,onAddNote,l
         <div style={S.avatar(p.id,68)}>{initials(p)}</div>
         <div style={{flex:1}}>
           <div style={{fontFamily:"Georgia,serif",fontSize:24,color:"#2A2118",marginBottom:4}}>{p.prenom} {p.nom}</div>
-          <div style={{fontSize:13,color:"#8A7968",marginBottom:12}}>{getAge(p.ddn)}{p.sexe?" · "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"Autre"):""}{p.email?" · "+p.email:""}</div>
+          <div style={{fontSize:13,color:"#8A7968",marginBottom:12}}>{getAge(p.ddn)}{p.sexe?" - "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"Autre"):""}{p.email?" - "+p.email:""}</div>
           <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
             {p.objectif&&<span style={S.tag("goal")}>{GOALS_FR[p.objectif]}</span>}
             {(p.diets||[]).map(d=><span key={d} style={S.tag("diet")}>{DIET_FR[d]||d}</span>)}
@@ -211,33 +243,33 @@ function ProfileView({p,plans,notes,onBack,onEdit,onDelete,onGenPlan,onAddNote,l
         </div>
         <div style={{display:"flex",gap:8,flexShrink:0}}>
           <button style={S.btn("secondary")} onClick={onEdit}>Modifier</button>
-          <button style={S.btn("forest")} onClick={onGenPlan}>✦ Nouveau plan</button>
+          <button style={S.btn("forest")} onClick={onGenPlan}>Nouveau plan</button>
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:22}}>
         <div>
           <div style={S.infoCard}>
             <div style={S.infoTitle}>Morphologie</div>
-            {[["Taille",p.taille?p.taille+" cm":"—"],["Poids actuel",p.poids?p.poids+" kg":"—"],["Poids objectif",p.poids_obj?p.poids_obj+" kg":"—"],["IMC",bmi],["À perdre",p.poids&&p.poids_obj?(p.poids-p.poids_obj)+" kg":"—"]].map(([k,v])=>(
-              <div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500,color:"#2A2118"}}>{v}</span></div>
+            {[["Taille",p.taille?p.taille+" cm":"-"],["Poids actuel",p.poids?p.poids+" kg":"-"],["Poids objectif",p.poids_obj?p.poids_obj+" kg":"-"],["IMC",bmi],["A perdre",p.poids&&p.poids_obj?(p.poids-p.poids_obj)+" kg":"-"]].map(([k,v])=>(
+              <div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500}}>{v}</span></div>
             ))}
           </div>
           <div style={S.infoCard}>
             <div style={S.infoTitle}>Mode de vie</div>
-            {[["Activité",ACTIVITE_FR[p.activite]||"—"],["Objectif",GOALS_FR[p.objectif]||"—"]].map(([k,v])=>(
+            {[["Activite",ACTIVITE_FR[p.activite]||"-"],["Objectif",GOALS_FR[p.objectif]||"-"]].map(([k,v])=>(
               <div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500}}>{v}</span></div>
             ))}
             {p.allergies&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Allergies</span><span style={{fontWeight:500,fontSize:12,textAlign:"right",maxWidth:160}}>{p.allergies}</span></div>}
-            {p.antecedents&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Antécédents</span><span style={{fontWeight:500,fontSize:12,textAlign:"right",maxWidth:160}}>{p.antecedents}</span></div>}
+            {p.antecedents&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Antecedents</span><span style={{fontWeight:500,fontSize:12,textAlign:"right",maxWidth:160}}>{p.antecedents}</span></div>}
           </div>
           <div style={S.infoCard}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <div style={S.infoTitle}>Notes praticien</div>
               <button style={{...S.btn("secondary"),padding:"5px 11px",fontSize:11}} onClick={onAddNote}>+ Ajouter</button>
             </div>
-            {loading ? <Spinner/> : notes.length===0
-              ? <p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune note</p>
-              : notes.map((n,i)=>(
+            {loading?<Spinner/>:notes.length===0
+              ?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune note</p>
+              :notes.map((n,i)=>(
                 <div key={i} style={{background:"#F0EBE1",borderRadius:9,padding:"11px 13px",borderLeft:"3px solid #7A9E7E",marginBottom:8}}>
                   <div style={{fontSize:11,color:"#8A7968",marginBottom:4}}>{new Date(n.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</div>
                   <div style={{fontSize:13,color:"#3D3228",lineHeight:1.5}}>{n.text}</div>
@@ -249,20 +281,20 @@ function ProfileView({p,plans,notes,onBack,onEdit,onDelete,onGenPlan,onAddNote,l
         <div>
           <div style={S.infoCard}>
             <div style={S.infoTitle}>Plans alimentaires</div>
-            {loading ? <Spinner/> : plans.length===0
-              ? <p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucun plan. Cliquez sur "✦ Nouveau plan".</p>
-              : plans.map((plan,i)=>(
+            {loading?<Spinner/>:plans.length===0
+              ?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucun plan. Cliquez sur "Nouveau plan".</p>
+              :plans.map((plan,i)=>(
                 <div key={i} style={{background:"#F0EBE1",borderRadius:12,marginBottom:14,overflow:"hidden"}}>
                   <div style={{background:plan.mode==="manual"?"#3D5A47":"#C4956A",color:"white",padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontSize:13,fontWeight:600}}>Plan {i+1} — {new Date(plan.created_at).toLocaleDateString("fr-FR")}</span>
+                    <span style={{fontSize:13,fontWeight:600}}>Plan {i+1} - {new Date(plan.created_at).toLocaleDateString("fr-FR")}</span>
                     <div style={{display:"flex",gap:6}}>
                       <span style={{fontSize:10,background:"rgba(255,255,255,0.2)",padding:"2px 8px",borderRadius:20}}>{plan.duration}</span>
-                      <span style={{fontSize:10,background:"rgba(255,255,255,0.15)",padding:"2px 8px",borderRadius:20}}>{plan.mode==="manual"?"✏️ Manuel":"✦ IA"}</span>
+                      <span style={{fontSize:10,background:"rgba(255,255,255,0.15)",padding:"2px 8px",borderRadius:20}}>{plan.mode==="manual"?"Manuel":"IA"}</span>
                     </div>
                   </div>
                   <div style={{padding:"12px 14px"}}>
                     <PlanDays days={plan.days}/>
-                    {plan.tips&&<div style={{marginTop:10,padding:"9px 12px",background:"rgba(61,90,71,0.08)",borderRadius:8,fontSize:12,color:"#3D5A47",lineHeight:1.5}}>💡 {plan.tips}</div>}
+                    {plan.tips&&<div style={{marginTop:10,padding:"9px 12px",background:"rgba(61,90,71,0.08)",borderRadius:8,fontSize:12,color:"#3D5A47",lineHeight:1.5}}>Conseils : {plan.tips}</div>}
                   </div>
                 </div>
               ))
@@ -280,9 +312,16 @@ function ProfileView({p,plans,notes,onBack,onEdit,onDelete,onGenPlan,onAddNote,l
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
+  const [session, setSession] = useState(() => {
+  try {
+    const s = localStorage.getItem("sodiet_session");
+    return s ? JSON.parse(s) : null;
+  } catch { return null; }
+});
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [patients, setPatients] = useState([]);
   const [loadingPatients, setLoadingPatients] = useState(true);
-  const [dbError, setDbError] = useState("");
   const [panel, setPanel] = useState("dashboard");
   const [currentId, setCurrentId] = useState(null);
   const [profilePlans, setProfilePlans] = useState([]);
@@ -304,21 +343,39 @@ export default function App() {
   const [noteText, setNoteText] = useState("");
   const [totalPlans, setTotalPlans] = useState(0);
 
+  const token = session?.access_token;
   const currentPatient = patients.find(p=>p.id===currentId);
   const ff = (k) => (v) => setForm(f=>({...f,[k]:v}));
 
-  // Load patients on mount
-  useEffect(()=>{
-    db.getPatients()
-      .then(data=>{ setPatients(data||[]); setLoadingPatients(false); })
-      .catch(e=>{ setDbError(e.message); setLoadingPatients(false); });
-  },[]);
+  const handleLogin = async (email, password) => {
+    setAuthLoading(true); setAuthError("");
+    const data = await db.login(email, password);
+  if (data.access_token) {
+  localStorage.setItem("sodiet_session", JSON.stringify(data));
+  setSession(data);
+}
+    else { setAuthError("Email ou mot de passe incorrect"); }
+    setAuthLoading(false);
+  };
 
-  // Load profile data when switching to a profile
+  const handleLogout = async () => {
+await db.logout(token);
+localStorage.removeItem("sodiet_session");
+setSession(null); setPatients([]);
+  };
+
   useEffect(()=>{
-    if(panel==="profile"&&currentId){
+    if(!session) return;
+    setLoadingPatients(true);
+    db.getPatients(token)
+      .then(data=>{ setPatients(data||[]); setLoadingPatients(false); })
+      .catch(()=>setLoadingPatients(false));
+  },[session]);
+
+  useEffect(()=>{
+    if(panel==="profile"&&currentId&&token){
       setProfileLoading(true);
-      Promise.all([db.getPlans(currentId), db.getNotes(currentId)])
+      Promise.all([db.getPlans(currentId,token), db.getNotes(currentId,token)])
         .then(([plans,notes])=>{ setProfilePlans(plans||[]); setProfileNotes(notes||[]); setProfileLoading(false); })
         .catch(()=>setProfileLoading(false));
     }
@@ -331,54 +388,37 @@ export default function App() {
   };
 
   const savePatient = async () => {
-    if(!form.prenom.trim()||!form.nom.trim()) { alert("Prénom et nom requis"); return; }
+    if(!form.prenom.trim()||!form.nom.trim()) { alert("Prenom et nom requis"); return; }
     setSaving(true);
     try {
-      const payload = {
-        prenom:form.prenom, nom:form.nom, ddn:form.ddn||null, sexe:form.sexe||null,
-        email:form.email||null, tel:form.tel||null, taille:form.taille?+form.taille:null,
-        poids:form.poids?+form.poids:null, poids_obj:form.poids_obj?+form.poids_obj:null,
-        objectif:form.objectif, activite:form.activite, diets:form.diets||[],
-        antecedents:form.antecedents||null, allergies:form.allergies||null, notes:form.notes||null
-      };
-      if(editId) {
-        await db.updatePatient(editId, payload);
-        setPatients(ps=>ps.map(p=>p.id===editId?{...p,...payload}:p));
-      } else {
-        const [created] = await db.addPatient(payload);
-        setPatients(ps=>[created,...ps]);
-      }
+      const payload = { prenom:form.prenom, nom:form.nom, ddn:form.ddn||null, sexe:form.sexe||null, email:form.email||null, tel:form.tel||null, taille:form.taille?+form.taille:null, poids:form.poids?+form.poids:null, poids_obj:form.poids_obj?+form.poids_obj:null, objectif:form.objectif, activite:form.activite, diets:form.diets||[], antecedents:form.antecedents||null, allergies:form.allergies||null, notes:form.notes||null };
+      if(editId) { await db.updatePatient(editId,payload,token); setPatients(ps=>ps.map(p=>p.id===editId?{...p,...payload}:p)); }
+      else { const [created]=await db.addPatient(payload,token); setPatients(ps=>[created,...ps]); }
       closeModal();
     } catch(e) { alert("Erreur : "+e.message); }
     setSaving(false);
   };
 
   const deletePatient = async (id) => {
-    if(!confirm("Supprimer ce patient et toutes ses données ?")) return;
-    await db.deletePatient(id);
-    setPatients(ps=>ps.filter(p=>p.id!==id));
-    setPanel("patients");
+    if(!confirm("Supprimer ce patient ?")) return;
+    await db.deletePatient(id,token);
+    setPatients(ps=>ps.filter(p=>p.id!==id)); setPanel("patients");
   };
 
   const saveNote = async () => {
     if(!noteText.trim()) return;
     setSaving(true);
-    try {
-      const [note] = await db.addNote({patient_id:currentId, text:noteText});
-      setProfileNotes(ns=>[note,...ns]);
-      setNoteText(""); closeModal();
-    } catch(e) { alert("Erreur : "+e.message); }
+    try { const [note]=await db.addNote({patient_id:currentId,text:noteText},token); setProfileNotes(ns=>[note,...ns]); setNoteText(""); closeModal(); }
+    catch(e) { alert("Erreur : "+e.message); }
     setSaving(false);
   };
 
   const saveManualPlan = async () => {
     setSaving(true);
     try {
-      const [plan] = await db.addPlan({ patient_id:currentId, duration:planDuration==="7j"?"7 jours":"3 jours", mode:"manual", tips:manualTips, days:manualDays });
-      setProfilePlans(ps=>[plan,...ps]);
-      setTotalPlans(c=>c+1);
-      setPlanResult({days:manualDays,tips:manualTips});
-      setPlanState("done");
+      const [plan]=await db.addPlan({patient_id:currentId,duration:planDuration==="7j"?"7 jours":"3 jours",mode:"manual",tips:manualTips,days:manualDays},token);
+      setProfilePlans(ps=>[plan,...ps]); setTotalPlans(c=>c+1);
+      setPlanResult({days:manualDays,tips:manualTips}); setPlanState("done");
     } catch(e) { alert("Erreur : "+e.message); }
     setSaving(false);
   };
@@ -389,38 +429,37 @@ export default function App() {
     setPlanState("loading"); setPlanError("");
     const dietStr=(p.diets||[]).map(d=>DIET_FR[d]||d).join(", ")||"aucune restriction";
     const daysCount=planDuration==="7j"?7:3;
-    const prompt="Tu es un nutritionniste expert. Génère un plan alimentaire en JSON strict.\n\nProfil: "+p.prenom+", "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"N/A")+", "+(p.taille||"?")+"cm, "+(p.poids||"?")+"kg, objectif "+(p.poids_obj||"?")+"kg, "+(GOALS_FR[p.objectif]||"?")+", "+(ACTIVITE_FR[p.activite]||"?")+", régime: "+dietStr+", allergies: "+(p.allergies||"aucune")+"."+(planInstr?" Instructions: "+planInstr+"." :"")+"\n\nRéponds UNIQUEMENT avec ce JSON (rien d'autre, pas de backticks) pour "+daysCount+" jours. Sois CONCIS (max 15 mots par repas):\n{\"days\":[{\"label\":\"Jour 1\",\"meals\":[{\"name\":\"Petit-déjeuner\",\"content\":\"...\"},{\"name\":\"Déjeuner\",\"content\":\"...\"},{\"name\":\"Collation\",\"content\":\"...\"},{\"name\":\"Dîner\",\"content\":\"...\"}]}],\"tips\":\"Un conseil court.\"}";
+    const prompt="Tu es un nutritionniste expert. Genere un plan alimentaire en JSON strict.\n\nProfil: "+p.prenom+", "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"N/A")+", "+(p.taille||"?")+"cm, "+(p.poids||"?")+"kg, objectif "+(p.poids_obj||"?")+"kg, "+(GOALS_FR[p.objectif]||"?")+", "+(ACTIVITE_FR[p.activite]||"?")+", regime: "+dietStr+", allergies: "+(p.allergies||"aucune")+"."+(planInstr?" Instructions: "+planInstr+"." :"")+"\n\nReponds UNIQUEMENT avec ce JSON (rien d'autre, pas de backticks) pour "+daysCount+" jours. Sois CONCIS (max 15 mots par repas):\n{\"days\":[{\"label\":\"Jour 1\",\"meals\":[{\"name\":\"Petit-dejeuner\",\"content\":\"...\"},{\"name\":\"Dejeuner\",\"content\":\"...\"},{\"name\":\"Collation\",\"content\":\"...\"},{\"name\":\"Diner\",\"content\":\"...\"}]}],\"tips\":\"Un conseil court.\"}";
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:prompt}]})});
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:prompt}]})});
       if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||"HTTP "+res.status);}
       const data=await res.json();
       const raw=(data.content||[]).map(c=>c.text||"").join("");
       const clean=raw.replace(/```json|```/g,"").trim();
       let parsed;
-      try{parsed=JSON.parse(clean);}
-      catch(e){const s=clean.indexOf("{"),end=clean.lastIndexOf("}");if(s===-1||end===-1)throw new Error("Aucun JSON trouvé");parsed=JSON.parse(clean.slice(s,end+1).replace(/,\s*([}\]])/g,"$1"));}
-      const [plan] = await db.addPlan({patient_id:currentId,duration:planDuration==="7j"?"7 jours":"3 jours",mode:"ai",tips:parsed.tips||"",days:parsed.days||[]});
-      setProfilePlans(ps=>[plan,...ps]);
-      setTotalPlans(c=>c+1);
-      setPlanResult(parsed);
-      setPlanState("done");
+      try{parsed=JSON.parse(clean);}catch(e){const s=clean.indexOf("{"),end=clean.lastIndexOf("}");if(s===-1||end===-1)throw new Error("JSON invalide");parsed=JSON.parse(clean.slice(s,end+1).replace(/,\s*([}\]])/g,"$1"));}
+      const [plan]=await db.addPlan({patient_id:currentId,duration:planDuration==="7j"?"7 jours":"3 jours",mode:"ai",tips:parsed.tips||"",days:parsed.days||[]},token);
+      setProfilePlans(ps=>[plan,...ps]); setTotalPlans(c=>c+1);
+      setPlanResult(parsed); setPlanState("done");
     } catch(e){setPlanError(e.message||"Erreur inconnue");setPlanState("error");}
-  },[patients,currentId,planDuration,planInstr]);
+  },[patients,currentId,planDuration,planInstr,token]);
 
   const handleShare = (result) => {
     const lines=(result.days||[]).flatMap(day=>["\n== "+day.label+" ==",...(day.meals||[]).filter(m=>m.content).map(m=>m.name+" : "+m.content)]);
-    if(result.tips)lines.push("\n💡 Conseils : "+result.tips);
-    window.location.href="mailto:"+(currentPatient?.email||"")+"?subject=Plan alimentaire SoDiet&body="+encodeURIComponent("Plan alimentaire — "+(currentPatient?.prenom)+" "+(currentPatient?.nom)+"\n"+lines.join("\n"));
+    if(result.tips)lines.push("\nConseils : "+result.tips);
+    window.location.href="mailto:"+(currentPatient?.email||"")+"?subject=Plan alimentaire SoDiet&body="+encodeURIComponent("Plan alimentaire - "+(currentPatient?.prenom)+" "+(currentPatient?.nom)+"\n"+lines.join("\n"));
   };
 
   const handlePrint = (result) => {
     const win=window.open("","_blank");
     const daysHtml=(result.days||[]).map(day=>"<div style='margin-bottom:18px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>"+day.label+"</div><div style='border:1px solid #E8DDD0;border-top:none;border-radius:0 0 6px 6px;padding:10px 14px'>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:6px 0;border-bottom:1px solid #f0ebe1'><strong style='color:#8A7968'>"+m.name+" :</strong> "+m.content+"</div>").join("")+"</div></div>").join("");
-    win.document.write("<!DOCTYPE html><html><head><title>Plan SoDiet</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;color:#3D3228}h1{color:#2A2118}.sub{color:#8A7968;font-size:13px;margin-bottom:28px}.tips{background:#f0f7f2;border-left:3px solid #7A9E7E;padding:12px;border-radius:0 8px 8px 0;font-size:13px;margin-top:8px}@media print{button{display:none}}</style></head><body><h1>Plan alimentaire SoDiet</h1><div class='sub'>"+(currentPatient?.prenom)+" "+(currentPatient?.nom)+" · "+new Date().toLocaleDateString("fr-FR")+"</div>"+daysHtml+(result.tips?"<div class='tips'>💡 "+result.tips+"</div>":"")+"<br/><button onclick='window.print()' style='padding:10px 20px;background:#C4956A;color:white;border:none;border-radius:8px;cursor:pointer'>🖨️ Imprimer</button></body></html>");
+    win.document.write("<!DOCTYPE html><html><head><title>Plan SoDiet</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;color:#3D3228}h1{color:#2A2118}.sub{color:#8A7968;font-size:13px;margin-bottom:28px}.tips{background:#f0f7f2;border-left:3px solid #7A9E7E;padding:12px;border-radius:0 8px 8px 0;font-size:13px;margin-top:8px}@media print{button{display:none}}</style></head><body><h1>Plan alimentaire SoDiet</h1><div class='sub'>"+(currentPatient?.prenom)+" "+(currentPatient?.nom)+" - "+new Date().toLocaleDateString("fr-FR")+"</div>"+daysHtml+(result.tips?"<div class='tips'>Conseils : "+result.tips+"</div>":"")+"<br/><button onclick='window.print()' style='padding:10px 20px;background:#C4956A;color:white;border:none;border-radius:8px;cursor:pointer'>Imprimer</button></body></html>");
     win.document.close();
   };
 
   const filteredPatients=patients.filter(p=>(p.prenom+" "+p.nom).toLowerCase().includes(search.toLowerCase()));
+
+  if(!session) return <LoginPage onLogin={handleLogin} error={authError} loading={authLoading}/>;
 
   return (
     <div style={S.app}>
@@ -436,7 +475,7 @@ export default function App() {
           <div style={S.navItem(panel==="dashboard")} onClick={()=>setPanel("dashboard")}><span>⊞</span>Tableau de bord</div>
           <div style={S.navItem(panel==="patients"||panel==="profile")} onClick={()=>setPanel("patients")}><span>👥</span>Mes patients</div>
           {patients.length>0&&<>
-            <div style={{...S.navLabel,marginTop:16}}>Patients récents</div>
+            <div style={{...S.navLabel,marginTop:16}}>Patients recents</div>
             {patients.slice(0,8).map(p=>(
               <div key={p.id} style={S.patChip(currentId===p.id&&panel==="profile")} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}>
                 <div style={S.avatar(p.id,26)}>{initials(p)}</div>
@@ -444,6 +483,11 @@ export default function App() {
               </div>
             ))}
           </>}
+        </div>
+        <div style={{padding:"16px 12px",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+          <button onClick={handleLogout} style={{...S.navItem(false),width:"100%",fontSize:12,color:"rgba(255,255,255,0.4)"}}>
+            <span>⎋</span>Deconnexion
+          </button>
         </div>
       </aside>
 
@@ -456,12 +500,10 @@ export default function App() {
         </div>
 
         <div style={S.content}>
-          {dbError&&<div style={{background:"#fff0ee",border:"1px solid #f5c0b8",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:13,color:"#c8503c"}}>⚠️ Erreur de connexion Supabase : {dbError}</div>}
-
           {panel==="dashboard"&&(
             <div>
               <div style={S.statsGrid}>
-                {[["Total patients",patients.length,"dans votre cabinet"],["Perte de poids",patients.filter(p=>p.objectif==="perte_poids").length,"objectif principal"],["Rééducation",patients.filter(p=>p.objectif==="reeducation").length,"réapprendre à manger"],["Plans créés",totalPlans,"ce session"]].map(([l,v,s])=>(
+                {[["Total patients",patients.length,"dans votre cabinet"],["Perte de poids",patients.filter(p=>p.objectif==="perte_poids").length,"objectif principal"],["Reeducation",patients.filter(p=>p.objectif==="reeducation").length,"reapprendre a manger"],["Plans crees",totalPlans,"cette session"]].map(([l,v,s])=>(
                   <div key={l} style={S.statCard}>
                     <div style={S.statLabel}>{l}</div>
                     <div style={S.statValue}>{v}</div>
@@ -471,13 +513,12 @@ export default function App() {
               </div>
               <div style={{...S.infoCard,padding:28}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-                  <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Patients récents</div>
-                  <button style={{...S.btn("secondary"),fontSize:12}} onClick={()=>setPanel("patients")}>Voir tous →</button>
+                  <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Patients recents</div>
+                  <button style={{...S.btn("secondary"),fontSize:12}} onClick={()=>setPanel("patients")}>Voir tous</button>
                 </div>
-                {loadingPatients ? <Spinner/>
-                  : patients.length===0
-                  ? <div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>🌿</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun patient</div><div style={{fontSize:13}}>Ajoutez votre premier patient</div></div>
-                  : <div style={S.patientsGrid}>{patients.slice(0,4).map(p=><PatientCard key={p.id} p={p} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}/>)}</div>
+                {loadingPatients?<Spinner/>:patients.length===0
+                  ?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>🌿</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun patient</div><div style={{fontSize:13}}>Ajoutez votre premier patient</div></div>
+                  :<div style={S.patientsGrid}>{patients.slice(0,4).map(p=><PatientCard key={p.id} p={p} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}/>)}</div>
                 }
               </div>
             </div>
@@ -487,12 +528,11 @@ export default function App() {
             <div>
               <div style={{position:"relative",marginBottom:24}}>
                 <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#8A7968"}}>🔍</span>
-                <input style={{...S.input,width:"100%",paddingLeft:40,borderRadius:12}} placeholder="Rechercher un patient…" value={search} onChange={e=>setSearch(e.target.value)}/>
+                <input style={{...S.input,width:"100%",paddingLeft:40,borderRadius:12}} placeholder="Rechercher un patient..." value={search} onChange={e=>setSearch(e.target.value)}/>
               </div>
-              {loadingPatients ? <Spinner/>
-                : filteredPatients.length===0
-                ? <div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>🌿</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>{search?"Aucun résultat":"Aucun patient"}</div><div style={{fontSize:13}}>{search?"Essayez un autre terme":"Cliquez sur « Nouveau patient »"}</div></div>
-                : <div style={S.patientsGrid}>{filteredPatients.map(p=><PatientCard key={p.id} p={p} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}/>)}</div>
+              {loadingPatients?<Spinner/>:filteredPatients.length===0
+                ?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>🌿</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>{search?"Aucun resultat":"Aucun patient"}</div><div style={{fontSize:13}}>{search?"Essayez un autre terme":"Cliquez sur Nouveau patient"}</div></div>
+                :<div style={S.patientsGrid}>{filteredPatients.map(p=><PatientCard key={p.id} p={p} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}/>)}</div>
               }
             </div>
           )}
@@ -509,36 +549,35 @@ export default function App() {
         </div>
       </main>
 
-      {/* MODAL: PATIENT */}
       {modal==="patient"&&(
         <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div style={S.modal}>
             <div style={S.modalHeader}>
               <div style={S.modalTitle}>{editId?"Modifier le patient":"Nouveau patient"}</div>
-              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
             </div>
             <div style={S.modalBody}>
               <SectionTitle>Informations personnelles</SectionTitle>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <FormInput label="Prénom *" value={form.prenom} onChange={ff("prenom")} placeholder="Sophie"/>
+                <FormInput label="Prenom *" value={form.prenom} onChange={ff("prenom")} placeholder="Sophie"/>
                 <FormInput label="Nom *" value={form.nom} onChange={ff("nom")} placeholder="Martin"/>
                 <FormInput label="Date de naissance" type="date" value={form.ddn} onChange={ff("ddn")}/>
-                <FormSelect label="Sexe" value={form.sexe} onChange={ff("sexe")} options={[{v:"",l:"—"},{v:"F",l:"Femme"},{v:"H",l:"Homme"},{v:"A",l:"Autre"}]}/>
+                <FormSelect label="Sexe" value={form.sexe} onChange={ff("sexe")} options={[{v:"",l:"-"},{v:"F",l:"Femme"},{v:"H",l:"Homme"},{v:"A",l:"Autre"}]}/>
                 <FormInput label="Email" type="email" value={form.email} onChange={ff("email")} placeholder="email@exemple.com"/>
-                <FormInput label="Téléphone" value={form.tel} onChange={ff("tel")} placeholder="06 00 00 00 00"/>
+                <FormInput label="Telephone" value={form.tel} onChange={ff("tel")} placeholder="06 00 00 00 00"/>
               </div>
-              <SectionTitle>Données morphologiques</SectionTitle>
+              <SectionTitle>Donnees morphologiques</SectionTitle>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                 <FormInput label="Taille (cm)" type="number" value={form.taille} onChange={ff("taille")} placeholder="168"/>
                 <FormInput label="Poids actuel (kg)" type="number" value={form.poids} onChange={ff("poids")} placeholder="72"/>
                 <FormInput label="Poids objectif (kg)" type="number" value={form.poids_obj} onChange={ff("poids_obj")} placeholder="65"/>
               </div>
-              <SectionTitle>Objectif & mode de vie</SectionTitle>
+              <SectionTitle>Objectif et mode de vie</SectionTitle>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <FormSelect label="Objectif principal" value={form.objectif} onChange={ff("objectif")} options={Object.entries(GOALS_FR).map(([v,l])=>({v,l}))}/>
-                <FormSelect label="Activité physique" value={form.activite} onChange={ff("activite")} options={Object.entries(ACTIVITE_FR).map(([v,l])=>({v,l}))}/>
+                <FormSelect label="Activite physique" value={form.activite} onChange={ff("activite")} options={Object.entries(ACTIVITE_FR).map(([v,l])=>({v,l}))}/>
               </div>
-              <SectionTitle>Régime & restrictions</SectionTitle>
+              <SectionTitle>Regime et restrictions</SectionTitle>
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
                 {Object.entries(DIET_FR).map(([v,l])=>{
                   const checked=(form.diets||[]).includes(v);
@@ -550,29 +589,28 @@ export default function App() {
                   );
                 })}
               </div>
-              <SectionTitle>Informations médicales</SectionTitle>
-              <div style={S.formGroup}><label style={S.label}>Antécédents / pathologies</label><textarea style={S.textarea} value={form.antecedents} onChange={e=>ff("antecedents")(e.target.value)} placeholder="Ex: hypertension, diabète type 2…"/></div>
-              <div style={S.formGroup}><label style={S.label}>Allergies alimentaires</label><textarea style={{...S.textarea,minHeight:55}} value={form.allergies} onChange={e=>ff("allergies")(e.target.value)} placeholder="Ex: arachides, fruits à coque…"/></div>
-              <div style={S.formGroup}><label style={S.label}>Notes</label><textarea style={S.textarea} value={form.notes} onChange={e=>ff("notes")(e.target.value)} placeholder="Observations, motivations…"/></div>
+              <SectionTitle>Informations medicales</SectionTitle>
+              <div style={S.formGroup}><label style={S.label}>Antecedents / pathologies</label><textarea style={S.textarea} value={form.antecedents} onChange={e=>ff("antecedents")(e.target.value)} placeholder="Ex: hypertension, diabete type 2..."/></div>
+              <div style={S.formGroup}><label style={S.label}>Allergies alimentaires</label><textarea style={{...S.textarea,minHeight:55}} value={form.allergies} onChange={e=>ff("allergies")(e.target.value)} placeholder="Ex: arachides, fruits a coque..."/></div>
+              <div style={S.formGroup}><label style={S.label}>Notes</label><textarea style={S.textarea} value={form.notes} onChange={e=>ff("notes")(e.target.value)} placeholder="Observations, motivations..."/></div>
             </div>
             <div style={S.modalFooter}>
               <button style={S.btn("secondary")} onClick={closeModal}>Annuler</button>
-              <button style={S.btn("primary")} onClick={savePatient} disabled={saving}>{saving?"Enregistrement…":"Enregistrer"}</button>
+              <button style={S.btn("primary")} onClick={savePatient} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL: PLAN */}
       {modal==="plan"&&(
         <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div style={{...S.modal,maxWidth:700}}>
             <div style={S.modalHeader}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 {planMode!=="choice"&&planState==="idle"&&<button onClick={()=>setPlanMode("choice")} style={{background:"none",border:"none",cursor:"pointer",color:"#8A7968",fontSize:18}}>←</button>}
-                <div style={S.modalTitle}>{planMode==="choice"?"Nouveau plan":planMode==="ai"?"✦ Plan IA":"✏️ Plan manuel"}</div>
+                <div style={S.modalTitle}>{planMode==="choice"?"Nouveau plan":planMode==="ai"?"Plan IA":"Plan manuel"}</div>
               </div>
-              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
             </div>
             <div style={S.modalBody}>
               {planMode==="choice"&&(
@@ -581,18 +619,18 @@ export default function App() {
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:24}}>
                     <div onClick={()=>setPlanMode("ai")} style={{background:"white",border:"2px solid #E8DDD0",borderRadius:14,padding:20,cursor:"pointer",textAlign:"center"}}>
                       <div style={{fontSize:32,marginBottom:8}}>✦</div>
-                      <div style={{fontSize:14,fontWeight:600,color:"#2A2118",marginBottom:4}}>Généré par l'IA</div>
-                      <div style={{fontSize:11,color:"#8A7968",lineHeight:1.4}}>L'IA crée le plan selon le profil</div>
+                      <div style={{fontSize:14,fontWeight:600,color:"#2A2118",marginBottom:4}}>Genere par l'IA</div>
+                      <div style={{fontSize:11,color:"#8A7968",lineHeight:1.4}}>L'IA cree le plan selon le profil</div>
                     </div>
-                    <div onClick={()=>{ setPlanDuration(planDuration); setManualDays(emptyManualPlan(planDuration==="7j"?7:3)); setManualTips(""); setPlanMode("manual"); }} style={{background:"white",border:"2px solid #E8DDD0",borderRadius:14,padding:20,cursor:"pointer",textAlign:"center"}}>
+                    <div onClick={()=>{setManualDays(emptyManualPlan(planDuration==="7j"?7:3));setManualTips("");setPlanMode("manual");}} style={{background:"white",border:"2px solid #E8DDD0",borderRadius:14,padding:20,cursor:"pointer",textAlign:"center"}}>
                       <div style={{fontSize:32,marginBottom:8}}>✏️</div>
                       <div style={{fontSize:14,fontWeight:600,color:"#2A2118",marginBottom:4}}>Saisie manuelle</div>
                       <div style={{fontSize:11,color:"#8A7968",lineHeight:1.4}}>Vous choisissez chaque repas</div>
                     </div>
                   </div>
-                  <p style={{fontSize:11,color:"#8A7968",textAlign:"center",marginBottom:10}}>Durée du plan :</p>
+                  <p style={{fontSize:11,color:"#8A7968",textAlign:"center",marginBottom:10}}>Duree du plan :</p>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                    {[["3j","📅","3 jours","Démarrage rapide"],["7j","🗓️","1 semaine","Plan complet"]].map(([v,ic,l,s])=>(
+                    {[["3j","📅","3 jours","Demarrage rapide"],["7j","🗓️","1 semaine","Plan complet"]].map(([v,ic,l,s])=>(
                       <div key={v} onClick={()=>setPlanDuration(v)} style={{background:planDuration===v?"rgba(196,149,106,0.07)":"white",border:"2px solid "+(planDuration===v?"#C4956A":"#E8DDD0"),borderRadius:12,padding:16,cursor:"pointer",textAlign:"center"}}>
                         <div style={{fontSize:26,marginBottom:6}}>{ic}</div>
                         <div style={{fontSize:14,fontWeight:600,color:"#2A2118"}}>{l}</div>
@@ -604,10 +642,10 @@ export default function App() {
               )}
               {planMode==="ai"&&planState==="idle"&&(
                 <div>
-                  <p style={{fontSize:13,color:"#8A7968",marginBottom:16}}>Plan IA — {planDuration==="7j"?"7 jours":"3 jours"}</p>
+                  <p style={{fontSize:13,color:"#8A7968",marginBottom:16}}>Plan IA - {planDuration==="7j"?"7 jours":"3 jours"}</p>
                   <div style={S.formGroup}>
-                    <label style={S.label}>Instructions spéciales (optionnel)</label>
-                    <textarea style={S.textarea} value={planInstr} onChange={e=>setPlanInstr(e.target.value)} placeholder="Ex: repas rapides, budget limité…"/>
+                    <label style={S.label}>Instructions speciales (optionnel)</label>
+                    <textarea style={S.textarea} value={planInstr} onChange={e=>setPlanInstr(e.target.value)} placeholder="Ex: repas rapides, budget limite..."/>
                   </div>
                 </div>
               )}
@@ -617,7 +655,7 @@ export default function App() {
                   <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:20}}>
                     {[0,200,400].map((d,i)=><div key={i} style={{width:10,height:10,borderRadius:"50%",background:"#C4956A",animation:"bounce 1.2s "+d+"ms infinite ease-in-out"}}/>)}
                   </div>
-                  <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#8A7968"}}>L'IA génère votre plan…</div>
+                  <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#8A7968"}}>L'IA genere votre plan...</div>
                 </div>
               )}
               {planMode==="ai"&&planState==="error"&&(
@@ -630,39 +668,38 @@ export default function App() {
               {planState==="done"&&planResult&&(
                 <div style={{maxHeight:"52vh",overflowY:"auto",paddingRight:4}}>
                   <PlanDays days={planResult.days}/>
-                  {planResult.tips&&<div style={{background:"rgba(61,90,71,0.09)",borderLeft:"3px solid #7A9E7E",borderRadius:"0 10px 10px 0",padding:"12px 14px",marginTop:8}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,color:"#3D5A47",marginBottom:5}}>💡 Conseils</div><div style={{fontSize:13,color:"#3D3228",lineHeight:1.6}}>{planResult.tips}</div></div>}
+                  {planResult.tips&&<div style={{background:"rgba(61,90,71,0.09)",borderLeft:"3px solid #7A9E7E",borderRadius:"0 10px 10px 0",padding:"12px 14px",marginTop:8}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,color:"#3D5A47",marginBottom:5}}>Conseils</div><div style={{fontSize:13,color:"#3D3228",lineHeight:1.6}}>{planResult.tips}</div></div>}
                 </div>
               )}
             </div>
             <div style={S.modalFooter}>
-              {planMode==="choice"&&<span style={{fontSize:12,color:"#8A7968",flex:1,textAlign:"center"}}>Sélectionnez un mode puis la durée</span>}
-              {planMode==="ai"&&planState==="idle"&&<><button style={S.btn("secondary")} onClick={closeModal}>Annuler</button><button style={S.btn("forest")} onClick={generatePlan}>✦ Générer avec l'IA</button></>}
-              {planMode==="ai"&&planState==="loading"&&<span style={{fontSize:12,color:"#8A7968"}}>Génération en cours…</span>}
-              {planMode==="ai"&&planState==="error"&&<><button style={S.btn("secondary")} onClick={closeModal}>Fermer</button><button style={S.btn("primary")} onClick={()=>{setPlanState("idle");setPlanError("");}}>Réessayer</button></>}
-              {planMode==="manual"&&planState==="idle"&&<><button style={S.btn("secondary")} onClick={closeModal}>Annuler</button><button style={S.btn("forest")} onClick={saveManualPlan} disabled={saving}>{saving?"Enregistrement…":"✓ Enregistrer le plan"}</button></>}
-              {planState==="done"&&planResult&&<><span style={{fontSize:13,color:"#7A9E7E",flex:1}}>✓ Plan enregistré dans Supabase</span><button style={S.btn("secondary")} onClick={()=>handleShare(planResult)}>✉️ Mail</button><button style={S.btn("secondary")} onClick={()=>handlePrint(planResult)}>🖨️ Imprimer</button><button style={S.btn("primary")} onClick={closeModal}>Fermer</button></>}
+              {planMode==="choice"&&<span style={{fontSize:12,color:"#8A7968",flex:1,textAlign:"center"}}>Selectionnez un mode puis la duree</span>}
+              {planMode==="ai"&&planState==="idle"&&<><button style={S.btn("secondary")} onClick={closeModal}>Annuler</button><button style={S.btn("forest")} onClick={generatePlan}>Generer avec l'IA</button></>}
+              {planMode==="ai"&&planState==="loading"&&<span style={{fontSize:12,color:"#8A7968"}}>Generation en cours...</span>}
+              {planMode==="ai"&&planState==="error"&&<><button style={S.btn("secondary")} onClick={closeModal}>Fermer</button><button style={S.btn("primary")} onClick={()=>{setPlanState("idle");setPlanError("");}}>Reessayer</button></>}
+              {planMode==="manual"&&planState==="idle"&&<><button style={S.btn("secondary")} onClick={closeModal}>Annuler</button><button style={S.btn("forest")} onClick={saveManualPlan} disabled={saving}>{saving?"Enregistrement...":"Enregistrer le plan"}</button></>}
+              {planState==="done"&&planResult&&<><span style={{fontSize:13,color:"#7A9E7E",flex:1}}>Plan enregistre</span><button style={S.btn("secondary")} onClick={()=>handleShare(planResult)}>Envoyer par mail</button><button style={S.btn("secondary")} onClick={()=>handlePrint(planResult)}>Imprimer</button><button style={S.btn("primary")} onClick={closeModal}>Fermer</button></>}
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL: NOTE */}
       {modal==="note"&&(
         <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div style={{...S.modal,maxWidth:480}}>
             <div style={S.modalHeader}>
               <div style={S.modalTitle}>Ajouter une note</div>
-              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
             </div>
             <div style={S.modalBody}>
               <div style={S.formGroup}>
                 <label style={S.label}>Note de consultation</label>
-                <textarea style={{...S.textarea,minHeight:120}} value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Observations lors de la consultation…"/>
+                <textarea style={{...S.textarea,minHeight:120}} value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Observations lors de la consultation..."/>
               </div>
             </div>
             <div style={S.modalFooter}>
               <button style={S.btn("secondary")} onClick={closeModal}>Annuler</button>
-              <button style={S.btn("primary")} onClick={saveNote} disabled={saving}>{saving?"Enregistrement…":"Enregistrer"}</button>
+              <button style={S.btn("primary")} onClick={saveNote} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
             </div>
           </div>
         </div>

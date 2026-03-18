@@ -369,8 +369,7 @@ function ManualPlanEditor({days,tips,onDaysChange,onTipsChange}) {
   );
 }
 
-function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAddNote,loading}) {
-  const bmi = calcBMI(p.poids,p.taille);
+function ProfileView({p,plans,notes,token,poidsData,onBack,onEdit,onDelete,onGenPlan,onAddNote,onExportPDF,loading}) {  const bmi = calcBMI(p.poids,p.taille);
   return (
     <div>
       <button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:6,color:"#8A7968",fontSize:13,cursor:"pointer",marginBottom:20,background:"none",border:"none",fontFamily:"'DM Sans',sans-serif"}}>← Retour</button>
@@ -446,8 +445,10 @@ function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAdd
           </div>
           {p.notes&&<div style={S.infoCard}><div style={S.infoTitle}>Notes initiales</div><p style={{fontSize:13,color:"#3D3228",lineHeight:1.6}}>{p.notes}</p></div>}
           <div style={{textAlign:"right",marginTop:8}}>
-            <button onClick={onDelete} style={{...S.btn("secondary"),color:"#c8503c",border:"1px solid #c8503c",background:"white"}}>Supprimer ce patient</button>
-          </div>
+<div style={{textAlign:"right",marginTop:8,display:"flex",justifyContent:"flex-end",gap:8}}>
+  <button onClick={onExportPDF} style={{...S.btn("secondary"),color:"#3D5A47",border:"1px solid #3D5A47"}}>📄 Exporter PDF</button>
+  <button onClick={onDelete} style={{...S.btn("secondary"),color:"#c8503c",border:"1px solid #c8503c",background:"white"}}>Supprimer ce patient</button>
+</div>          </div>
         </div>
       </div>
     </div>
@@ -464,6 +465,7 @@ export default function App() {
   const [currentId, setCurrentId] = useState(null);
   const [profilePlans, setProfilePlans] = useState([]);
   const [profileNotes, setProfileNotes] = useState([]);
+  const [profilePoids, setProfilePoids] = useState([]);
   const [profileLoading, setProfileLoading] = useState(false);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -508,7 +510,8 @@ export default function App() {
   useEffect(()=>{
     if(panel==="profile"&&currentId&&token){
       setProfileLoading(true);
-      Promise.all([db.getPlans(currentId,token), db.getNotes(currentId,token)])
+      Promise.all([db.getPlans(currentId,token), db.getNotes(currentId,token), db.getPoids(currentId,token)])
+  .then(([plans,notes,poids])=>{ setProfilePlans(plans||[]); setProfileNotes(notes||[]); setProfilePoids(poids||[]); setProfileLoading(false); })
         .then(([plans,notes])=>{ setProfilePlans(plans||[]); setProfileNotes(notes||[]); setProfileLoading(false); })
         .catch(()=>setProfileLoading(false));
     }
@@ -582,7 +585,32 @@ export default function App() {
     if(result.tips)lines.push("\nConseils : "+result.tips);
     window.location.href="mailto:"+(currentPatient?.email||"")+"?subject=Plan alimentaire SoDiet&body="+encodeURIComponent("Plan alimentaire - "+(currentPatient?.prenom)+" "+(currentPatient?.nom)+"\n"+lines.join("\n"));
   };
-
+const exportPatientPDF = (p, plans, notes, poidsData) => {
+    const win = window.open("","_blank");
+    const bmi = calcBMI(p.poids, p.taille);
+    const poidsRows = (poidsData||[]).map(d =>
+      "<tr><td>"+new Date(d.date).toLocaleDateString("fr-FR")+"</td><td><strong>"+d.poids+" kg</strong></td><td>"+(d.note||"-")+"</td></tr>"
+    ).join("");
+    const plansHtml = (plans||[]).map((plan,i) =>
+      "<div style='margin-bottom:24px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>Plan "+(i+1)+" — "+new Date(plan.created_at).toLocaleDateString("fr-FR")+" ("+plan.duration+")</div><div style='border:1px solid #E8DDD0;border-top:none;padding:12px 14px;border-radius:0 0 6px 6px'>"+
+      (plan.days||[]).map(day=>"<div style='margin-bottom:10px'><div style='font-weight:600;color:#8B5E3C;font-size:12px;text-transform:uppercase;margin-bottom:4px'>"+day.label+"</div>"+
+      (day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:4px 0;border-bottom:1px solid #f5f5f5;font-size:13px'><strong style='color:#8A7968'>"+m.name+" :</strong> "+m.content+"</div>").join("")+"</div>").join("")+
+      (plan.tips?"<div style='background:#f0f7f2;border-left:3px solid #7A9E7E;padding:8px 12px;margin-top:8px;font-size:12px'>Conseils : "+plan.tips+"</div>":"")+"</div></div>"
+    ).join("");
+    const notesHtml = (notes||[]).map(n =>
+      "<div style='border-left:3px solid #7A9E7E;padding:8px 12px;margin-bottom:8px;background:#f9f9f9'><div style='font-size:11px;color:#8A7968;margin-bottom:4px'>"+new Date(n.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div><div style='font-size:13px'>"+n.text+"</div></div>"
+    ).join("");
+    win.document.write("<!DOCTYPE html><html><head><title>Dossier — "+p.prenom+" "+p.nom+"</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;color:#3D3228;padding:0 20px}h1{color:#2A2118;font-size:26px;margin-bottom:4px}h2{color:#C4956A;font-size:13px;letter-spacing:2px;text-transform:uppercase;margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid #E8DDD0}.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}.stat{background:#FAF7F2;border:1px solid #E8DDD0;border-radius:8px;padding:12px;text-align:center}.stat-val{font-size:20px;font-weight:600;color:#2A2118}.stat-label{font-size:10px;color:#8A7968;text-transform:uppercase;letter-spacing:1px;margin-top:2px}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#F0EBE1;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#8A7968}td{padding:8px 12px;border-bottom:1px solid #F0EBE1}.tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:rgba(61,90,71,0.12);color:#3D5A47;margin-right:4px}@media print{button{display:none}}</style></head><body>"+
+    "<div style='display:flex;justify-content:space-between;align-items:start;margin-bottom:24px'><div><h1>"+p.prenom+" "+p.nom+"</h1><div style='color:#8A7968;font-size:13px;margin-top:4px'>"+getAge(p.ddn)+(p.sexe?" - "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"Autre"):"")+(p.email?" - "+p.email:"")+"</div></div><div style='font-size:11px;color:#8A7968;text-align:right'>SoDiet — Dossier patient<br>"+new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div></div>"+
+    "<h2>Donnees morphologiques</h2><div class='grid'><div class='stat'><div class='stat-val'>"+(p.taille||"-")+" cm</div><div class='stat-label'>Taille</div></div><div class='stat'><div class='stat-val'>"+(p.poids||"-")+" kg</div><div class='stat-label'>Poids initial</div></div><div class='stat'><div class='stat-val'>"+(p.poids_obj||"-")+" kg</div><div class='stat-label'>Objectif</div></div><div class='stat'><div class='stat-val'>"+bmi+"</div><div class='stat-label'>IMC</div></div><div class='stat'><div class='stat-val'>"+(ACTIVITE_FR[p.activite]||"-")+"</div><div class='stat-label'>Activite</div></div><div class='stat'><div class='stat-val'>"+(poidsData||[]).length+"</div><div class='stat-label'>Mesures poids</div></div></div>"+
+    (p.allergies?"<div style='background:#fff8f5;border:1px solid #f5c0b8;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px'><strong>Allergies :</strong> "+p.allergies+"</div>":"")+
+    (p.antecedents?"<div style='background:#f5f8ff;border:1px solid #c0c8f5;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px'><strong>Antecedents :</strong> "+p.antecedents+"</div>":"")+
+    (poidsRows?"<h2>Suivi du poids</h2><table><thead><tr><th>Date</th><th>Poids</th><th>Note</th></tr></thead><tbody>"+poidsRows+"</tbody></table>":"")+
+    (notesHtml?"<h2>Notes de consultation</h2>"+notesHtml:"")+
+    (plansHtml?"<h2>Plans alimentaires</h2>"+plansHtml:"")+
+    "<br/><button onclick='window.print()' style='padding:10px 24px;background:#C4956A;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px'>Imprimer / Exporter en PDF</button></body></html>");
+    win.document.close();
+  };
   const handlePrint = (result) => {
     const win=window.open("","_blank");
     const daysHtml=(result.days||[]).map(day=>"<div style='margin-bottom:18px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>"+day.label+"</div><div style='border:1px solid #E8DDD0;border-top:none;border-radius:0 0 6px 6px;padding:10px 14px'>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:6px 0;border-bottom:1px solid #f0ebe1'><strong style='color:#8A7968'>"+m.name+" :</strong> "+m.content+"</div>").join("")+"</div></div>").join("");
@@ -669,13 +697,14 @@ export default function App() {
           )}
 
           {panel==="profile"&&currentPatient&&(
-            <ProfileView p={currentPatient} plans={profilePlans} notes={profileNotes} token={token} loading={profileLoading}
-              onBack={()=>setPanel("patients")}
-              onEdit={()=>{setForm({...EMPTY_FORM,...currentPatient,poids_obj:currentPatient.poids_obj||""});setEditId(currentPatient.id);setModal("patient");}}
-              onDelete={()=>deletePatient(currentPatient.id)}
-              onGenPlan={()=>{setPlanMode("choice");setPlanState("idle");setPlanResult(null);setModal("plan");}}
-              onAddNote={()=>setModal("note")}
-            />
+<ProfileView p={currentPatient} plans={profilePlans} notes={profileNotes} token={token} poidsData={profilePoids} loading={profileLoading}
+  onBack={()=>setPanel("patients")}
+  onEdit={()=>{setForm({...EMPTY_FORM,...currentPatient,poids_obj:currentPatient.poids_obj||""});setEditId(currentPatient.id);setModal("patient");}}
+  onDelete={()=>deletePatient(currentPatient.id)}
+  onGenPlan={()=>{setPlanMode("choice");setPlanState("idle");setPlanResult(null);setModal("plan");}}
+  onAddNote={()=>setModal("note")}
+  onExportPDF={()=>exportPatientPDF(currentPatient, profilePlans, profileNotes, profilePoids)}
+/>
           )}
         </div>
       </main>

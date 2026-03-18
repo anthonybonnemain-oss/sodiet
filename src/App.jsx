@@ -3,17 +3,10 @@
 const SUPA_URL = "https://vumghyubyppcdaimitds.supabase.co";
 const SUPA_KEY = "sb_publishable_Ru4pet2VDNDWzN2PQdHq2g_rhqNwuG-";
 
-// ── Supabase ──────────────────────────────────────────────────────────────────
 async function supaFetch(path, opts = {}) {
   const token = opts.token || SUPA_KEY;
   const res = await fetch(SUPA_URL + "/rest/v1/" + path, {
-    headers: {
-      "apikey": SUPA_KEY,
-      "Authorization": "Bearer " + token,
-      "Content-Type": "application/json",
-      "Prefer": opts.prefer || "return=representation",
-      ...opts.headers
-    },
+    headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + token, "Content-Type": "application/json", "Prefer": opts.prefer || "return=representation", ...opts.headers },
     method: opts.method || "GET",
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
@@ -23,25 +16,21 @@ async function supaFetch(path, opts = {}) {
 }
 
 const db = {
-  login: (email, password) => fetch(SUPA_URL + "/auth/v1/token?grant_type=password", {
-    method: "POST",
-    headers: { "apikey": SUPA_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password })
-  }).then(r => r.json()),
-  logout: (token) => fetch(SUPA_URL + "/auth/v1/logout", {
-    method: "POST", headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + token }
-  }),
+  login: (email, password) => fetch(SUPA_URL + "/auth/v1/token?grant_type=password", { method: "POST", headers: { "apikey": SUPA_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }).then(r => r.json()),
+  logout: (token) => fetch(SUPA_URL + "/auth/v1/logout", { method: "POST", headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + token } }),
   getPatients: (token) => supaFetch("patients?select=*&order=created_at.desc", { token }),
   addPatient: (p, token) => supaFetch("patients", { method: "POST", body: p, token }),
   updatePatient: (id, p, token) => supaFetch("patients?id=eq." + id, { method: "PATCH", body: p, token }),
   deletePatient: (id, token) => supaFetch("patients?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
-  getPlans: (patientId, token) => supaFetch("plans?patient_id=eq." + patientId + "&order=created_at.desc", { token }),
+  getPlans: (pid, token) => supaFetch("plans?patient_id=eq." + pid + "&order=created_at.desc", { token }),
   addPlan: (p, token) => supaFetch("plans", { method: "POST", body: p, token }),
-  getNotes: (patientId, token) => supaFetch("consult_notes?patient_id=eq." + patientId + "&order=created_at.desc", { token }),
+  getNotes: (pid, token) => supaFetch("consult_notes?patient_id=eq." + pid + "&order=created_at.desc", { token }),
   addNote: (n, token) => supaFetch("consult_notes", { method: "POST", body: n, token }),
+  getPoids: (pid, token) => supaFetch("poids_historique?patient_id=eq." + pid + "&order=date.asc", { token }),
+  addPoids: (p, token) => supaFetch("poids_historique", { method: "POST", body: p, token }),
+  deletePoids: (id, token) => supaFetch("poids_historique?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
 };
 
-// ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = ["#C4956A","#3D5A47","#7A9E7E","#8B5E3C","#5B7A8B","#9B6B8A","#6B8B6B"];
 const GOALS_FR = { perte_poids:"Perte de poids", reeducation:"Reeducation alimentaire", prise_masse:"Prise de masse", sante:"Sante generale", sport:"Performance sportive" };
 const ACTIVITE_FR = { sedentaire:"Sedentaire", leger:"Legerement actif", modere:"Moderement actif", actif:"Tres actif", sport_intense:"Sport intensif" };
@@ -56,7 +45,6 @@ const emptyDay = (i) => ({ label:"Jour "+(i+1), meals:MEAL_NAMES.map(name=>({nam
 const emptyManualPlan = (n) => Array.from({length:n},(_,i)=>emptyDay(i));
 const EMPTY_FORM = { prenom:"",nom:"",ddn:"",sexe:"",email:"",tel:"",taille:"",poids:"",poids_obj:"",objectif:"perte_poids",activite:"sedentaire",diets:[],antecedents:"",allergies:"",notes:"" };
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const S = {
   app: { display:"flex", minHeight:"100vh", fontFamily:"'DM Sans',sans-serif", background:"#FAF7F2", color:"#3D3228" },
   sidebar: { width:260, minHeight:"100vh", background:"#2A2118", display:"flex", flexDirection:"column", position:"sticky", top:0, height:"100vh", flexShrink:0 },
@@ -101,7 +89,163 @@ const S = {
   planMealContent: { fontSize:13, color:"#3D3228", lineHeight:1.5 },
 };
 
-// ── Login page ────────────────────────────────────────────────────────────────
+// ── Weight Chart ──────────────────────────────────────────────────────────────
+function PoidsChart({ data, objectif }) {
+  if (!data || data.length === 0) return (
+    <p style={{ fontSize:12, color:"#8A7968", fontStyle:"italic" }}>Aucune mesure enregistree. Ajoutez une mesure pour voir la courbe.</p>
+  );
+
+  const W = 580, H = 200, PL = 45, PR = 20, PT = 20, PB = 35;
+  const cw = W - PL - PR, ch = H - PT - PB;
+  const weights = data.map(d => d.poids);
+  const allWeights = objectif ? [...weights, +objectif] : weights;
+  const minW = Math.min(...allWeights) - 2;
+  const maxW = Math.max(...allWeights) + 2;
+  const range = maxW - minW || 1;
+
+  const x = (i) => PL + (i / (data.length - 1 || 1)) * cw;
+  const y = (w) => PT + ch - ((w - minW) / range) * ch;
+
+  const pathD = data.map((d, i) => (i === 0 ? "M" : "L") + x(i).toFixed(1) + "," + y(d.poids).toFixed(1)).join(" ");
+  const areaD = pathD + " L" + x(data.length-1).toFixed(1) + "," + (PT+ch) + " L" + PL + "," + (PT+ch) + " Z";
+
+  const ticks = 4;
+  const yTicks = Array.from({length:ticks+1}, (_,i) => minW + (range/ticks)*i);
+
+  return (
+    <svg viewBox={"0 0 "+W+" "+H} style={{ width:"100%", height:"auto" }}>
+      {yTicks.map((t,i) => (
+        <g key={i}>
+          <line x1={PL} y1={y(t).toFixed(1)} x2={W-PR} y2={y(t).toFixed(1)} stroke="#F0EBE1" strokeWidth="1"/>
+          <text x={PL-6} y={y(t)+4} textAnchor="end" fontSize="9" fill="#8A7968">{t.toFixed(1)}</text>
+        </g>
+      ))}
+      {objectif && (
+        <line x1={PL} y1={y(+objectif).toFixed(1)} x2={W-PR} y2={y(+objectif).toFixed(1)} stroke="#7A9E7E" strokeWidth="1.5" strokeDasharray="4,3"/>
+      )}
+      <defs>
+        <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#C4956A" stopOpacity="0.25"/>
+          <stop offset="100%" stopColor="#C4956A" stopOpacity="0.02"/>
+        </linearGradient>
+      </defs>
+      <path d={areaD} fill="url(#wg)"/>
+      <path d={pathD} fill="none" stroke="#C4956A" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
+      {data.map((d,i) => (
+        <g key={i}>
+          <circle cx={x(i).toFixed(1)} cy={y(d.poids).toFixed(1)} r="4" fill="white" stroke="#C4956A" strokeWidth="2"/>
+          <text x={x(i).toFixed(1)} y={y(d.poids)-10} textAnchor="middle" fontSize="9" fill="#8B5E3C" fontWeight="600">{d.poids}kg</text>
+        </g>
+      ))}
+      {data.map((d,i) => (
+        <text key={i} x={x(i).toFixed(1)} y={H-8} textAnchor="middle" fontSize="8" fill="#8A7968">
+          {new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})}
+        </text>
+      ))}
+      {objectif && (
+        <text x={W-PR} y={y(+objectif)-5} textAnchor="end" fontSize="9" fill="#7A9E7E">Objectif {objectif}kg</text>
+      )}
+    </svg>
+  );
+}
+
+function PoidsSection({ patientId, objectif, token }) {
+  const [poidsData, setPoidsData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newPoids, setNewPoids] = useState("");
+  const [newDate, setNewDate] = useState(new Date().toISOString().split("T")[0]);
+  const [newNote, setNewNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    db.getPoids(patientId, token).then(d => { setPoidsData(d||[]); setLoading(false); }).catch(()=>setLoading(false));
+  }, [patientId]);
+
+  const addMesure = async () => {
+    if (!newPoids) return;
+    setSaving(true);
+    try {
+      const [entry] = await db.addPoids({ patient_id:patientId, poids:+newPoids, date:newDate, note:newNote||null }, token);
+      const updated = [...poidsData, entry].sort((a,b)=>new Date(a.date)-new Date(b.date));
+      setPoidsData(updated);
+      setNewPoids(""); setNewNote("");
+    } catch(e) { alert("Erreur : "+e.message); }
+    setSaving(false);
+  };
+
+  const deleteMesure = async (id) => {
+    await db.deletePoids(id, token);
+    setPoidsData(d => d.filter(x => x.id !== id));
+  };
+
+  const poidsDiff = poidsData.length >= 2
+    ? (poidsData[poidsData.length-1].poids - poidsData[0].poids).toFixed(1)
+    : null;
+
+  return (
+    <div style={S.infoCard}>
+      <div style={S.infoTitle}>Suivi du poids</div>
+      {loading ? <Spinner/> : (
+        <>
+          {poidsData.length >= 2 && (
+            <div style={{ display:"flex", gap:12, marginBottom:16 }}>
+              {[
+                ["Debut", poidsData[0].poids+"kg"],
+                ["Actuel", poidsData[poidsData.length-1].poids+"kg"],
+                ["Evolution", (poidsDiff > 0 ? "+" : "")+poidsDiff+"kg"],
+                ["Objectif", objectif ? objectif+"kg" : "-"]
+              ].map(([k,v])=>(
+                <div key={k} style={{ flex:1, background:"#F0EBE1", borderRadius:10, padding:"10px 14px", textAlign:"center" }}>
+                  <div style={{ fontSize:14, fontWeight:600, color: k==="Evolution" ? (poidsDiff<=0?"#3D5A47":"#c8503c") : "#2A2118" }}>{v}</div>
+                  <div style={{ fontSize:10, color:"#8A7968", textTransform:"uppercase", letterSpacing:"0.8px", marginTop:2 }}>{k}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ marginBottom:16, background:"#FDFAF7", borderRadius:10, padding:12 }}>
+            <PoidsChart data={poidsData} objectif={objectif}/>
+          </div>
+          <div style={{ borderTop:"1px solid #F0EBE1", paddingTop:14, marginBottom:14 }}>
+            <div style={{ fontSize:11, fontWeight:600, color:"#8A7968", textTransform:"uppercase", letterSpacing:"1px", marginBottom:10 }}>Ajouter une mesure</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 2fr auto", gap:8, alignItems:"end" }}>
+              <div style={S.formGroup}>
+                <label style={S.label}>Poids (kg)</label>
+                <input type="number" step="0.1" value={newPoids} onChange={e=>setNewPoids(e.target.value)} placeholder="72.5" style={S.input}/>
+              </div>
+              <div style={S.formGroup}>
+                <label style={S.label}>Date</label>
+                <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={S.input}/>
+              </div>
+              <div style={S.formGroup}>
+                <label style={S.label}>Note (optionnel)</label>
+                <input type="text" value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Ex: apres sport..." style={S.input}/>
+              </div>
+              <button onClick={addMesure} disabled={saving||!newPoids} style={{...S.btn("primary"), marginBottom:14}}>
+                {saving ? "..." : "+ Ajouter"}
+              </button>
+            </div>
+          </div>
+          {poidsData.length > 0 && (
+            <div>
+              <div style={{ fontSize:11, fontWeight:600, color:"#8A7968", textTransform:"uppercase", letterSpacing:"1px", marginBottom:8 }}>Historique</div>
+              <div style={{ maxHeight:160, overflowY:"auto" }}>
+                {[...poidsData].reverse().map((d,i)=>(
+                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:"1px solid #F0EBE1", fontSize:13 }}>
+                    <span style={{ color:"#8A7968" }}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</span>
+                    <span style={{ fontWeight:600 }}>{d.poids} kg</span>
+                    {d.note && <span style={{ fontSize:11, color:"#8A7968", fontStyle:"italic" }}>{d.note}</span>}
+                    <button onClick={()=>deleteMesure(d.id)} style={{ background:"none", border:"none", cursor:"pointer", color:"#c8503c", fontSize:16, padding:"0 4px" }}>×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function LoginPage({ onLogin, error, loading }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -114,11 +258,11 @@ function LoginPage({ onLogin, error, loading }) {
         </div>
         <div style={S.formGroup}>
           <label style={S.label}>Email</label>
-          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="votre@email.com" style={{...S.input, width:"100%", boxSizing:"border-box"}}/>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="votre@email.com" style={{...S.input,width:"100%",boxSizing:"border-box"}}/>
         </div>
-        <div style={{...S.formGroup, marginBottom:24}}>
+        <div style={{...S.formGroup,marginBottom:24}}>
           <label style={S.label}>Mot de passe</label>
-          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" style={{...S.input, width:"100%", boxSizing:"border-box"}}/>
+          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" style={{...S.input,width:"100%",boxSizing:"border-box"}}/>
         </div>
         {error && <div style={{ background:"#fff0ee", border:"1px solid #f5c0b8", borderRadius:8, padding:"10px 14px", fontSize:12, color:"#c8503c", marginBottom:16 }}>{error}</div>}
         <button onClick={()=>onLogin(email,password)} disabled={loading} style={{ width:"100%", padding:"12px", background:"#C4956A", color:"white", border:"none", borderRadius:10, fontSize:14, fontWeight:500, cursor:"pointer", fontFamily:"inherit" }}>
@@ -129,7 +273,6 @@ function LoginPage({ onLogin, error, loading }) {
   );
 }
 
-// ── Small reusable components ─────────────────────────────────────────────────
 function FormInput({label,type,value,onChange,placeholder}) {
   return <div style={S.formGroup}><label style={S.label}>{label}</label><input style={S.input} type={type||"text"} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""}/></div>;
 }
@@ -220,13 +363,13 @@ function ManualPlanEditor({days,tips,onDaysChange,onTipsChange}) {
       ))}
       <div style={S.formGroup}>
         <label style={S.label}>Conseils (optionnel)</label>
-        <textarea style={{...S.textarea,minHeight:55}} value={tips} onChange={e=>onTipsChange(e.target.value)} placeholder="Ex: bien s'hydrater, eviter les sucres raffines..."/>
+        <textarea style={{...S.textarea,minHeight:55}} value={tips} onChange={e=>onTipsChange(e.target.value)} placeholder="Ex: bien s'hydrater..."/>
       </div>
     </div>
   );
 }
 
-function ProfileView({p,plans,notes,onBack,onEdit,onDelete,onGenPlan,onAddNote,loading}) {
+function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAddNote,loading}) {
   const bmi = calcBMI(p.poids,p.taille);
   return (
     <div>
@@ -250,7 +393,7 @@ function ProfileView({p,plans,notes,onBack,onEdit,onDelete,onGenPlan,onAddNote,l
         <div>
           <div style={S.infoCard}>
             <div style={S.infoTitle}>Morphologie</div>
-            {[["Taille",p.taille?p.taille+" cm":"-"],["Poids actuel",p.poids?p.poids+" kg":"-"],["Poids objectif",p.poids_obj?p.poids_obj+" kg":"-"],["IMC",bmi],["A perdre",p.poids&&p.poids_obj?(p.poids-p.poids_obj)+" kg":"-"]].map(([k,v])=>(
+            {[["Taille",p.taille?p.taille+" cm":"-"],["Poids initial",p.poids?p.poids+" kg":"-"],["Poids objectif",p.poids_obj?p.poids_obj+" kg":"-"],["IMC",bmi]].map(([k,v])=>(
               <div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500}}>{v}</span></div>
             ))}
           </div>
@@ -279,10 +422,11 @@ function ProfileView({p,plans,notes,onBack,onEdit,onDelete,onGenPlan,onAddNote,l
           </div>
         </div>
         <div>
+          <PoidsSection patientId={p.id} objectif={p.poids_obj} token={token}/>
           <div style={S.infoCard}>
             <div style={S.infoTitle}>Plans alimentaires</div>
             {loading?<Spinner/>:plans.length===0
-              ?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucun plan. Cliquez sur "Nouveau plan".</p>
+              ?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucun plan.</p>
               :plans.map((plan,i)=>(
                 <div key={i} style={{background:"#F0EBE1",borderRadius:12,marginBottom:14,overflow:"hidden"}}>
                   <div style={{background:plan.mode==="manual"?"#3D5A47":"#C4956A",color:"white",padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -310,14 +454,8 @@ function ProfileView({p,plans,notes,onBack,onEdit,onDelete,onGenPlan,onAddNote,l
   );
 }
 
-// ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [session, setSession] = useState(() => {
-  try {
-    const s = localStorage.getItem("sodiet_session");
-    return s ? JSON.parse(s) : null;
-  } catch { return null; }
-});
+  const [session, setSession] = useState(() => { try { const s=localStorage.getItem("sodiet_session"); return s?JSON.parse(s):null; } catch { return null; } });
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [patients, setPatients] = useState([]);
@@ -350,26 +488,21 @@ export default function App() {
   const handleLogin = async (email, password) => {
     setAuthLoading(true); setAuthError("");
     const data = await db.login(email, password);
-  if (data.access_token) {
-  localStorage.setItem("sodiet_session", JSON.stringify(data));
-  setSession(data);
-}
+    if (data.access_token) { localStorage.setItem("sodiet_session", JSON.stringify(data)); setSession(data); }
     else { setAuthError("Email ou mot de passe incorrect"); }
     setAuthLoading(false);
   };
 
   const handleLogout = async () => {
-await db.logout(token);
-localStorage.removeItem("sodiet_session");
-setSession(null); setPatients([]);
+    await db.logout(token);
+    localStorage.removeItem("sodiet_session");
+    setSession(null); setPatients([]);
   };
 
   useEffect(()=>{
     if(!session) return;
     setLoadingPatients(true);
-    db.getPatients(token)
-      .then(data=>{ setPatients(data||[]); setLoadingPatients(false); })
-      .catch(()=>setLoadingPatients(false));
+    db.getPatients(token).then(data=>{ setPatients(data||[]); setLoadingPatients(false); }).catch(()=>setLoadingPatients(false));
   },[session]);
 
   useEffect(()=>{
@@ -453,7 +586,7 @@ setSession(null); setPatients([]);
   const handlePrint = (result) => {
     const win=window.open("","_blank");
     const daysHtml=(result.days||[]).map(day=>"<div style='margin-bottom:18px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>"+day.label+"</div><div style='border:1px solid #E8DDD0;border-top:none;border-radius:0 0 6px 6px;padding:10px 14px'>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:6px 0;border-bottom:1px solid #f0ebe1'><strong style='color:#8A7968'>"+m.name+" :</strong> "+m.content+"</div>").join("")+"</div></div>").join("");
-    win.document.write("<!DOCTYPE html><html><head><title>Plan SoDiet</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;color:#3D3228}h1{color:#2A2118}.sub{color:#8A7968;font-size:13px;margin-bottom:28px}.tips{background:#f0f7f2;border-left:3px solid #7A9E7E;padding:12px;border-radius:0 8px 8px 0;font-size:13px;margin-top:8px}@media print{button{display:none}}</style></head><body><h1>Plan alimentaire SoDiet</h1><div class='sub'>"+(currentPatient?.prenom)+" "+(currentPatient?.nom)+" - "+new Date().toLocaleDateString("fr-FR")+"</div>"+daysHtml+(result.tips?"<div class='tips'>Conseils : "+result.tips+"</div>":"")+"<br/><button onclick='window.print()' style='padding:10px 20px;background:#C4956A;color:white;border:none;border-radius:8px;cursor:pointer'>Imprimer</button></body></html>");
+    win.document.write("<!DOCTYPE html><html><head><title>Plan SoDiet</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;color:#3D3228}@media print{button{display:none}}</style></head><body><h1>Plan alimentaire SoDiet</h1><p style='color:#8A7968;margin-bottom:28px'>"+(currentPatient?.prenom)+" "+(currentPatient?.nom)+" - "+new Date().toLocaleDateString("fr-FR")+"</p>"+daysHtml+(result.tips?"<div style='background:#f0f7f2;border-left:3px solid #7A9E7E;padding:12px;margin-top:8px'>Conseils : "+result.tips+"</div>":"")+"<br/><button onclick='window.print()' style='padding:10px 20px;background:#C4956A;color:white;border:none;border-radius:8px;cursor:pointer'>Imprimer</button></body></html>");
     win.document.close();
   };
 
@@ -485,9 +618,7 @@ setSession(null); setPatients([]);
           </>}
         </div>
         <div style={{padding:"16px 12px",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
-          <button onClick={handleLogout} style={{...S.navItem(false),width:"100%",fontSize:12,color:"rgba(255,255,255,0.4)"}}>
-            <span>⎋</span>Deconnexion
-          </button>
+          <div onClick={handleLogout} style={{...S.navItem(false),cursor:"pointer"}}><span>⎋</span>Deconnexion</div>
         </div>
       </aside>
 
@@ -538,7 +669,7 @@ setSession(null); setPatients([]);
           )}
 
           {panel==="profile"&&currentPatient&&(
-            <ProfileView p={currentPatient} plans={profilePlans} notes={profileNotes} loading={profileLoading}
+            <ProfileView p={currentPatient} plans={profilePlans} notes={profileNotes} token={token} loading={profileLoading}
               onBack={()=>setPanel("patients")}
               onEdit={()=>{setForm({...EMPTY_FORM,...currentPatient,poids_obj:currentPatient.poids_obj||""});setEditId(currentPatient.id);setModal("patient");}}
               onDelete={()=>deletePatient(currentPatient.id)}
@@ -569,7 +700,7 @@ setSession(null); setPatients([]);
               <SectionTitle>Donnees morphologiques</SectionTitle>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                 <FormInput label="Taille (cm)" type="number" value={form.taille} onChange={ff("taille")} placeholder="168"/>
-                <FormInput label="Poids actuel (kg)" type="number" value={form.poids} onChange={ff("poids")} placeholder="72"/>
+                <FormInput label="Poids initial (kg)" type="number" value={form.poids} onChange={ff("poids")} placeholder="72"/>
                 <FormInput label="Poids objectif (kg)" type="number" value={form.poids_obj} onChange={ff("poids_obj")} placeholder="65"/>
               </div>
               <SectionTitle>Objectif et mode de vie</SectionTitle>

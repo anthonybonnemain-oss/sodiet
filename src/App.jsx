@@ -29,6 +29,9 @@ const db = {
   getPoids: (pid, token) => supaFetch("poids_historique?patient_id=eq." + pid + "&order=date.asc", { token }),
   addPoids: (p, token) => supaFetch("poids_historique", { method: "POST", body: p, token }),
   deletePoids: (id, token) => supaFetch("poids_historique?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
+  getMensurations: (pid, token) => supaFetch("mensurations?patient_id=eq." + pid + "&order=date.asc", { token }),
+  addMensuration: (m, token) => supaFetch("mensurations", { method: "POST", body: m, token }),
+  deleteMensuration: (id, token) => supaFetch("mensurations?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
   getRDV: (token) => supaFetch("rendez_vous?select=*,patients(prenom,nom)&order=date.asc,heure.asc", { token }),
   addRDV: (r, token) => supaFetch("rendez_vous", { method: "POST", body: r, token }),
   deleteRDV: (id, token) => supaFetch("rendez_vous?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
@@ -39,6 +42,9 @@ const GOALS_FR = { perte_poids:"Perte de poids", reeducation:"Reeducation alimen
 const ACTIVITE_FR = { sedentaire:"Sedentaire", leger:"Legerement actif", modere:"Moderement actif", actif:"Tres actif", sport_intense:"Sport intensif" };
 const DIET_FR = { vegetarien:"Vegetarien", vegan:"Vegan", sans_gluten:"Sans gluten", sans_lactose:"Sans lactose", halal:"Halal", casher:"Casher", diabetique:"Diabetique" };
 const MEAL_NAMES = ["Petit-dejeuner","Dejeuner","Collation","Diner"];
+const SOMMEIL_FR = { mauvais:"Mauvais", moyen:"Moyen", bon:"Bon", excellent:"Excellent" };
+const TRANSIT_FR = { normal:"Normal", lent:"Lent", rapide:"Rapide", irregulier:"Irregulier" };
+const ALIM_FR = { sale:"Plutot sale", sucre:"Plutot sucre", equilibre:"Equilibre" };
 
 const avatarColor = (id) => COLORS[Math.abs((id||"").toString().split("").reduce((a,c)=>a+c.charCodeAt(0),0)) % COLORS.length];
 const initials = (p) => ((p.prenom||"?")[0]+(p.nom||"?")[0]).toUpperCase();
@@ -46,8 +52,15 @@ const getAge = (ddn) => { if(!ddn) return "-"; const d=Math.floor((Date.now()-ne
 const calcBMI = (p,t) => { if(!p||!t) return "-"; return (p/Math.pow(t/100,2)).toFixed(1); };
 const emptyDay = (i) => ({ label:"Jour "+(i+1), meals:MEAL_NAMES.map(name=>({name,content:""})) });
 const emptyManualPlan = (n) => Array.from({length:n},(_,i)=>emptyDay(i));
-const EMPTY_FORM = { prenom:"",nom:"",ddn:"",sexe:"",email:"",tel:"",taille:"",poids:"",poids_obj:"",objectif:"perte_poids",activite:"sedentaire",diets:[],antecedents:"",allergies:"",notes:"" };
+
+const EMPTY_FORM = {
+  prenom:"",nom:"",ddn:"",sexe:"",email:"",tel:"",
+  taille:"",poids:"",poids_obj:"",objectif:"perte_poids",activite:"sedentaire",
+  diets:[],antecedents:"",allergies:"",notes:"",
+  sommeil:"",transit:"",moral:"",alimentation:"",prise_de_sang:""
+};
 const EMPTY_RDV = { patient_id:"", date:"", heure:"08:00", duree:60, note:"" };
+const EMPTY_MENS = { date:new Date().toISOString().split("T")[0], nombril:"", hanche:"", cuisse_d:"", bras_d:"", masse_grasse:"", masse_hydrique:"", masse_musculaire:"", imc:"", note:"" };
 
 const S = {
   app: { display:"flex", minHeight:"100vh", fontFamily:"'DM Sans',sans-serif", background:"#FAF7F2", color:"#3D3228" },
@@ -93,7 +106,6 @@ const S = {
   planMealContent: { fontSize:13, color:"#3D3228", lineHeight:1.5 },
 };
 
-// ── Composants utilitaires ────────────────────────────────────────────────────
 function FormInput({label,type,value,onChange,placeholder}) {
   return <div style={S.formGroup}><label style={S.label}>{label}</label><input style={S.input} type={type||"text"} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""}/></div>;
 }
@@ -133,7 +145,6 @@ function PlanDays({days}) {
   );
 }
 
-// ── Weight Chart ──────────────────────────────────────────────────────────────
 function PoidsChart({data, objectif}) {
   if(!data||data.length===0) return <p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune mesure. Ajoutez une mesure pour voir la courbe.</p>;
   const W=580,H=200,PL=45,PR=20,PT=20,PB=35;
@@ -145,8 +156,7 @@ function PoidsChart({data, objectif}) {
   const y=(w)=>PT+ch-((w-minW)/range)*ch;
   const pathD=data.map((d,i)=>(i===0?"M":"L")+x(i).toFixed(1)+","+y(d.poids).toFixed(1)).join(" ");
   const areaD=pathD+" L"+x(data.length-1).toFixed(1)+","+(PT+ch)+" L"+PL+","+(PT+ch)+" Z";
-  const ticks=4;
-  const yTicks=Array.from({length:ticks+1},(_,i)=>minW+(range/ticks)*i);
+  const yTicks=Array.from({length:5},(_,i)=>minW+(range/4)*i);
   return (
     <svg viewBox={"0 0 "+W+" "+H} style={{width:"100%",height:"auto"}}>
       {yTicks.map((t,i)=>(<g key={i}><line x1={PL} y1={y(t).toFixed(1)} x2={W-PR} y2={y(t).toFixed(1)} stroke="#F0EBE1" strokeWidth="1"/><text x={PL-6} y={y(t)+4} textAnchor="end" fontSize="9" fill="#8A7968">{t.toFixed(1)}</text></g>))}
@@ -231,7 +241,126 @@ function PoidsSection({patientId, objectif, token}) {
   );
 }
 
-// ── Agenda ────────────────────────────────────────────────────────────────────
+function MensurationsSection({patientId, token}) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState(EMPTY_MENS);
+  const [saving, setSaving] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+
+  useEffect(()=>{ db.getMensurations(patientId,token).then(d=>{setData(d||[]);setLoading(false);}).catch(()=>setLoading(false)); },[patientId]);
+
+  const ff = (k) => (v) => setForm(f=>({...f,[k]:v}));
+
+  const addMens = async () => {
+    if(!form.date){alert("Date requise");return;}
+    setSaving(true);
+    try {
+      const payload={patient_id:patientId,date:form.date,note:form.note||null,
+        nombril:form.nombril?+form.nombril:null,hanche:form.hanche?+form.hanche:null,
+        cuisse_d:form.cuisse_d?+form.cuisse_d:null,bras_d:form.bras_d?+form.bras_d:null,
+        masse_grasse:form.masse_grasse?+form.masse_grasse:null,masse_hydrique:form.masse_hydrique?+form.masse_hydrique:null,
+        masse_musculaire:form.masse_musculaire?+form.masse_musculaire:null,imc:form.imc?+form.imc:null};
+      const [entry]=await db.addMensuration(payload,token);
+      setData(d=>[...d,entry].sort((a,b)=>new Date(a.date)-new Date(b.date)));
+      setForm(EMPTY_MENS); setShowForm(false);
+    }catch(e){alert("Erreur : "+e.message);}
+    setSaving(false);
+  };
+
+  const deleteMens = async (id) => { await db.deleteMensuration(id,token); setData(d=>d.filter(x=>x.id!==id)); };
+
+  const last = data.length>0?data[data.length-1]:null;
+  const prev = data.length>1?data[data.length-2]:null;
+
+  const diff = (key) => {
+    if(!last||!prev||!last[key]||!prev[key]) return null;
+    const d=(last[key]-prev[key]).toFixed(1);
+    return (d>0?"+":"")+d;
+  };
+
+  return (
+    <div style={S.infoCard}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={S.infoTitle}>Mensurations & composition corporelle</div>
+        <button style={{...S.btn("secondary"),padding:"5px 11px",fontSize:11}} onClick={()=>setShowForm(!showForm)}>{showForm?"Fermer":"+ Ajouter"}</button>
+      </div>
+      {loading?<Spinner/>:(
+        <>
+          {last&&(
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,color:"#8A7968",marginBottom:10}}>Derniere mesure : {new Date(last.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
+                {[["Nombril",last.nombril,"cm"],["Hanche",last.hanche,"cm"],["Cuisse D",last.cuisse_d,"cm"],["Bras D",last.bras_d,"cm"]].map(([k,v,u])=>(
+                  <div key={k} style={{background:"#F0EBE1",borderRadius:10,padding:"10px",textAlign:"center"}}>
+                    <div style={{fontSize:15,fontWeight:600,color:"#2A2118"}}>{v?v+u:"-"}</div>
+                    <div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.5px",marginTop:2}}>{k}</div>
+                    {diff(k.toLowerCase().replace(" ","_"))&&<div style={{fontSize:10,color:diff(k.toLowerCase().replace(" ","_"))<=0?"#3D5A47":"#c8503c",marginTop:2}}>{diff(k.toLowerCase().replace(" ","_"))}</div>}
+                  </div>
+                ))}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+                {[["Masse grasse",last.masse_grasse,"%"],["Masse hydrique",last.masse_hydrique,"%"],["Masse musculaire",last.masse_musculaire,"%"],["IMC",last.imc,""]].map(([k,v,u])=>(
+                  <div key={k} style={{background:"#F0EBE1",borderRadius:10,padding:"10px",textAlign:"center"}}>
+                    <div style={{fontSize:15,fontWeight:600,color:"#2A2118"}}>{v?(v+u):"-"}</div>
+                    <div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.5px",marginTop:2}}>{k}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {showForm&&(
+            <div style={{background:"#F0EBE1",borderRadius:12,padding:16,marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:12}}>Nouvelle mesure</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div style={S.formGroup}><label style={S.label}>Date *</label><input type="date" value={form.date} onChange={e=>ff("date")(e.target.value)} style={S.input}/></div>
+                <div style={S.formGroup}><label style={S.label}>Note</label><input type="text" value={form.note} onChange={e=>ff("note")(e.target.value)} placeholder="Ex: apres sport..." style={S.input}/></div>
+              </div>
+              <div style={{fontSize:11,fontWeight:600,color:"#3D5A47",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Mensurations (cm)</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+                {[["Nombril","nombril"],["Hanche","hanche"],["Cuisse D","cuisse_d"],["Bras D","bras_d"]].map(([l,k])=>(
+                  <div key={k} style={S.formGroup}><label style={S.label}>{l}</label><input type="number" step="0.1" value={form[k]} onChange={e=>ff(k)(e.target.value)} placeholder="0" style={S.input}/></div>
+                ))}
+              </div>
+              <div style={{fontSize:11,fontWeight:600,color:"#3D5A47",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Composition corporelle</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+                {[["Masse grasse %","masse_grasse"],["Masse hydrique %","masse_hydrique"],["Masse musculaire %","masse_musculaire"],["IMC","imc"]].map(([l,k])=>(
+                  <div key={k} style={S.formGroup}><label style={S.label}>{l}</label><input type="number" step="0.1" value={form[k]} onChange={e=>ff(k)(e.target.value)} placeholder="0" style={S.input}/></div>
+                ))}
+              </div>
+              <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                <button style={S.btn("secondary")} onClick={()=>setShowForm(false)}>Annuler</button>
+                <button style={S.btn("primary")} onClick={addMens} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
+              </div>
+            </div>
+          )}
+
+          {data.length>0&&(
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Historique</div>
+              <div style={{maxHeight:200,overflowY:"auto"}}>
+                {[...data].reverse().map((d,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #F0EBE1",fontSize:12}}>
+                    <span style={{color:"#8A7968",minWidth:100}}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"})}</span>
+                    <div style={{display:"flex",gap:12,flex:1,flexWrap:"wrap"}}>
+                      {[["Nombril",d.nombril,"cm"],["Hanche",d.hanche,"cm"],["Cuisse",d.cuisse_d,"cm"],["Bras",d.bras_d,"cm"],["MG",d.masse_grasse,"%"],["MH",d.masse_hydrique,"%"],["MM",d.masse_musculaire,"%"],["IMC",d.imc,""]].filter(([,v])=>v).map(([k,v,u])=>(
+                        <span key={k} style={{color:"#3D3228"}}><span style={{color:"#8A7968"}}>{k}:</span> {v}{u}</span>
+                      ))}
+                    </div>
+                    <button onClick={()=>deleteMens(d.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:16,padding:"0 4px",flexShrink:0}}>x</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {data.length===0&&!showForm&&<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune mensuration. Cliquez sur "+ Ajouter".</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
 function AgendaView({rdvList, loadingRDV, patients, onAddRDV, onDeleteRDV}) {
   const today = new Date().toISOString().split("T")[0];
   const upcoming = rdvList.filter(r=>r.date>=today);
@@ -280,7 +409,6 @@ function AgendaView({rdvList, loadingRDV, patients, onAddRDV, onDeleteRDV}) {
   );
 }
 
-// ── Login ─────────────────────────────────────────────────────────────────────
 function LoginPage({onLogin, error, loading}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -302,7 +430,6 @@ function LoginPage({onLogin, error, loading}) {
   );
 }
 
-// ── Patient components ────────────────────────────────────────────────────────
 function PatientCard({p,onClick}) {
   const bmi=calcBMI(p.poids,p.taille);
   return (
@@ -359,6 +486,7 @@ function ManualPlanEditor({days,tips,onDaysChange,onTipsChange}) {
 
 function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAddNote,onExportPDF,loading}) {
   const bmi=calcBMI(p.poids,p.taille);
+  const moralEmojis=["","😞","😕","😐","🙂","😄"];
   return (
     <div>
       <button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:6,color:"#8A7968",fontSize:13,cursor:"pointer",marginBottom:20,background:"none",border:"none",fontFamily:"'DM Sans',sans-serif"}}>← Retour</button>
@@ -393,6 +521,16 @@ function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAdd
             {p.allergies&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Allergies</span><span style={{fontWeight:500,fontSize:12,textAlign:"right",maxWidth:160}}>{p.allergies}</span></div>}
             {p.antecedents&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Antecedents</span><span style={{fontWeight:500,fontSize:12,textAlign:"right",maxWidth:160}}>{p.antecedents}</span></div>}
           </div>
+          {(p.sommeil||p.transit||p.moral||p.alimentation||p.prise_de_sang)&&(
+            <div style={S.infoCard}>
+              <div style={S.infoTitle}>Bilan sante initial</div>
+              {p.sommeil&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Sommeil</span><span style={{fontWeight:500}}>{SOMMEIL_FR[p.sommeil]||p.sommeil}</span></div>}
+              {p.transit&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Transit</span><span style={{fontWeight:500}}>{TRANSIT_FR[p.transit]||p.transit}</span></div>}
+              {p.moral&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Moral</span><span style={{fontWeight:500}}>{moralEmojis[p.moral]||""} {p.moral}/5</span></div>}
+              {p.alimentation&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Alimentation</span><span style={{fontWeight:500}}>{ALIM_FR[p.alimentation]||p.alimentation}</span></div>}
+              {p.prise_de_sang&&<div style={{padding:"7px 0",fontSize:13}}><div style={{color:"#8A7968",marginBottom:4}}>Prise de sang</div><div style={{fontSize:12,color:"#3D3228",lineHeight:1.5,background:"#F0EBE1",borderRadius:8,padding:"8px 10px"}}>{p.prise_de_sang}</div></div>}
+            </div>
+          )}
           <div style={S.infoCard}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <div style={S.infoTitle}>Notes praticien</div>
@@ -411,6 +549,7 @@ function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAdd
         </div>
         <div>
           <PoidsSection patientId={p.id} objectif={p.poids_obj} token={token}/>
+          <MensurationsSection patientId={p.id} token={token}/>
           <div style={S.infoCard}>
             <div style={S.infoTitle}>Plans alimentaires</div>
             {loading?<Spinner/>:plans.length===0
@@ -443,7 +582,6 @@ function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAdd
   );
 }
 
-// ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [session, setSession] = useState(()=>{try{const s=localStorage.getItem("sodiet_session");return s?JSON.parse(s):null;}catch{return null;}});
   const [authLoading, setAuthLoading] = useState(false);
@@ -454,7 +592,6 @@ export default function App() {
   const [currentId, setCurrentId] = useState(null);
   const [profilePlans, setProfilePlans] = useState([]);
   const [profileNotes, setProfileNotes] = useState([]);
-  const [profilePoids, setProfilePoids] = useState([]);
   const [profileLoading, setProfileLoading] = useState(false);
   const [rdvList, setRdvList] = useState([]);
   const [loadingRDV, setLoadingRDV] = useState(false);
@@ -525,7 +662,16 @@ export default function App() {
     if(!form.prenom.trim()||!form.nom.trim()){alert("Prenom et nom requis");return;}
     setSaving(true);
     try {
-      const payload={prenom:form.prenom,nom:form.nom,ddn:form.ddn||null,sexe:form.sexe||null,email:form.email||null,tel:form.tel||null,taille:form.taille?+form.taille:null,poids:form.poids?+form.poids:null,poids_obj:form.poids_obj?+form.poids_obj:null,objectif:form.objectif,activite:form.activite,diets:form.diets||[],antecedents:form.antecedents||null,allergies:form.allergies||null,notes:form.notes||null};
+      const payload={
+        prenom:form.prenom,nom:form.nom,ddn:form.ddn||null,sexe:form.sexe||null,
+        email:form.email||null,tel:form.tel||null,taille:form.taille?+form.taille:null,
+        poids:form.poids?+form.poids:null,poids_obj:form.poids_obj?+form.poids_obj:null,
+        objectif:form.objectif,activite:form.activite,diets:form.diets||[],
+        antecedents:form.antecedents||null,allergies:form.allergies||null,notes:form.notes||null,
+        sommeil:form.sommeil||null,transit:form.transit||null,
+        moral:form.moral?+form.moral:null,alimentation:form.alimentation||null,
+        prise_de_sang:form.prise_de_sang||null
+      };
       if(editId){await db.updatePatient(editId,payload,token);setPatients(ps=>ps.map(p=>p.id===editId?{...p,...payload}:p));}
       else{const [created]=await db.addPatient(payload,token);setPatients(ps=>[created,...ps]);}
       closeModal();
@@ -591,18 +737,18 @@ export default function App() {
     }catch(e){setPlanError(e.message||"Erreur inconnue");setPlanState("error");}
   },[patients,currentId,planDuration,planInstr,token]);
 
-  const exportPatientPDF = (p, plans, notes, poidsData) => {
+  const exportPatientPDF = (p, plans, notes) => {
     const win=window.open("","_blank");
     const bmi=calcBMI(p.poids,p.taille);
-    const poidsRows=(poidsData||[]).map(d=>"<tr><td>"+new Date(d.date).toLocaleDateString("fr-FR")+"</td><td><strong>"+d.poids+" kg</strong></td><td>"+(d.note||"-")+"</td></tr>").join("");
     const plansHtml=(plans||[]).map((plan,i)=>"<div style='margin-bottom:24px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>Plan "+(i+1)+" - "+new Date(plan.created_at).toLocaleDateString("fr-FR")+" ("+plan.duration+")</div><div style='border:1px solid #E8DDD0;border-top:none;padding:12px 14px;border-radius:0 0 6px 6px'>"+(plan.days||[]).map(day=>"<div style='margin-bottom:10px'><div style='font-weight:600;color:#8B5E3C;font-size:12px;text-transform:uppercase;margin-bottom:4px'>"+day.label+"</div>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:4px 0;border-bottom:1px solid #f5f5f5;font-size:13px'><strong style='color:#8A7968'>"+m.name+" :</strong> "+m.content+"</div>").join("")+"</div>").join("")+(plan.tips?"<div style='background:#f0f7f2;border-left:3px solid #7A9E7E;padding:8px 12px;margin-top:8px;font-size:12px'>Conseils : "+plan.tips+"</div>":"")+"</div></div>").join("");
     const notesHtml=(notes||[]).map(n=>"<div style='border-left:3px solid #7A9E7E;padding:8px 12px;margin-bottom:8px;background:#f9f9f9'><div style='font-size:11px;color:#8A7968;margin-bottom:4px'>"+new Date(n.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div><div style='font-size:13px'>"+n.text+"</div></div>").join("");
-    win.document.write("<!DOCTYPE html><html><head><title>Dossier - "+p.prenom+" "+p.nom+"</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;color:#3D3228;padding:0 20px}h1{color:#2A2118;font-size:26px;margin-bottom:4px}h2{color:#C4956A;font-size:13px;letter-spacing:2px;text-transform:uppercase;margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid #E8DDD0}.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}.stat{background:#FAF7F2;border:1px solid #E8DDD0;border-radius:8px;padding:12px;text-align:center}.stat-val{font-size:20px;font-weight:600;color:#2A2118}.stat-label{font-size:10px;color:#8A7968;text-transform:uppercase;letter-spacing:1px;margin-top:2px}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#F0EBE1;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#8A7968}td{padding:8px 12px;border-bottom:1px solid #F0EBE1}@media print{button{display:none}}</style></head><body>"+
-    "<div style='display:flex;justify-content:space-between;align-items:start;margin-bottom:24px'><div><h1>"+p.prenom+" "+p.nom+"</h1><div style='color:#8A7968;font-size:13px;margin-top:4px'>"+getAge(p.ddn)+(p.sexe?" - "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"Autre"):"")+(p.email?" - "+p.email:"")+"</div></div><div style='font-size:11px;color:#8A7968;text-align:right'>SoDiet - Dossier patient<br>"+new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div></div>"+
-    "<h2>Donnees morphologiques</h2><div class='grid'><div class='stat'><div class='stat-val'>"+(p.taille||"-")+" cm</div><div class='stat-label'>Taille</div></div><div class='stat'><div class='stat-val'>"+(p.poids||"-")+" kg</div><div class='stat-label'>Poids initial</div></div><div class='stat'><div class='stat-val'>"+(p.poids_obj||"-")+" kg</div><div class='stat-label'>Objectif</div></div><div class='stat'><div class='stat-val'>"+bmi+"</div><div class='stat-label'>IMC</div></div><div class='stat'><div class='stat-val'>"+(ACTIVITE_FR[p.activite]||"-")+"</div><div class='stat-label'>Activite</div></div><div class='stat'><div class='stat-val'>"+(poidsData||[]).length+"</div><div class='stat-label'>Mesures poids</div></div></div>"+
+    win.document.write("<!DOCTYPE html><html><head><title>Dossier - "+p.prenom+" "+p.nom+"</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;color:#3D3228;padding:0 20px}h1{color:#2A2118;font-size:26px}h2{color:#C4956A;font-size:13px;letter-spacing:2px;text-transform:uppercase;margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid #E8DDD0}.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}.stat{background:#FAF7F2;border:1px solid #E8DDD0;border-radius:8px;padding:12px;text-align:center}.stat-val{font-size:18px;font-weight:600;color:#2A2118}.stat-label{font-size:10px;color:#8A7968;text-transform:uppercase;margin-top:2px}@media print{button{display:none}}</style></head><body>"+
+    "<div style='display:flex;justify-content:space-between;align-items:start;margin-bottom:24px'><div><h1>"+p.prenom+" "+p.nom+"</h1><div style='color:#8A7968;font-size:13px;margin-top:4px'>"+getAge(p.ddn)+(p.sexe?" - "+(p.sexe==="F"?"Femme":"Homme"):"")+(p.email?" - "+p.email:"")+"</div></div><div style='font-size:11px;color:#8A7968;text-align:right'>SoDiet - Dossier patient<br>"+new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div></div>"+
+    "<h2>Donnees morphologiques</h2><div class='grid'><div class='stat'><div class='stat-val'>"+(p.taille||"-")+" cm</div><div class='stat-label'>Taille</div></div><div class='stat'><div class='stat-val'>"+(p.poids||"-")+" kg</div><div class='stat-label'>Poids initial</div></div><div class='stat'><div class='stat-val'>"+(p.poids_obj||"-")+" kg</div><div class='stat-label'>Objectif</div></div><div class='stat'><div class='stat-val'>"+bmi+"</div><div class='stat-label'>IMC</div></div><div class='stat'><div class='stat-val'>"+(ACTIVITE_FR[p.activite]||"-")+"</div><div class='stat-label'>Activite</div></div></div>"+
+    ((p.sommeil||p.transit||p.moral||p.alimentation)?"<h2>Bilan sante</h2><div class='grid'>"+(p.sommeil?"<div class='stat'><div class='stat-val'>"+(SOMMEIL_FR[p.sommeil]||p.sommeil)+"</div><div class='stat-label'>Sommeil</div></div>":"")+(p.transit?"<div class='stat'><div class='stat-val'>"+(TRANSIT_FR[p.transit]||p.transit)+"</div><div class='stat-label'>Transit</div></div>":"")+(p.moral?"<div class='stat'><div class='stat-val'>"+p.moral+"/5</div><div class='stat-label'>Moral</div></div>":"")+(p.alimentation?"<div class='stat'><div class='stat-val'>"+(ALIM_FR[p.alimentation]||p.alimentation)+"</div><div class='stat-label'>Alimentation</div></div>":"")+"</div>":"")+
+    (p.prise_de_sang?"<div style='background:#f5f8ff;border:1px solid #c0c8f5;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px'><strong>Prise de sang :</strong> "+p.prise_de_sang+"</div>":"")+
     (p.allergies?"<div style='background:#fff8f5;border:1px solid #f5c0b8;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px'><strong>Allergies :</strong> "+p.allergies+"</div>":"")+
     (p.antecedents?"<div style='background:#f5f8ff;border:1px solid #c0c8f5;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px'><strong>Antecedents :</strong> "+p.antecedents+"</div>":"")+
-    (poidsRows?"<h2>Suivi du poids</h2><table><thead><tr><th>Date</th><th>Poids</th><th>Note</th></tr></thead><tbody>"+poidsRows+"</tbody></table>":"")+
     (notesHtml?"<h2>Notes de consultation</h2>"+notesHtml:"")+
     (plansHtml?"<h2>Plans alimentaires</h2>"+plansHtml:"")+
     "<br/><button onclick='window.print()' style='padding:10px 24px;background:#C4956A;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px'>Imprimer / Exporter en PDF</button></body></html>");
@@ -729,11 +875,11 @@ export default function App() {
           {panel==="profile"&&currentPatient&&(
             <ProfileView p={currentPatient} plans={profilePlans} notes={profileNotes} token={token} loading={profileLoading}
               onBack={()=>setPanel("patients")}
-              onEdit={()=>{setForm({...EMPTY_FORM,...currentPatient,poids_obj:currentPatient.poids_obj||""});setEditId(currentPatient.id);setModal("patient");}}
+              onEdit={()=>{setForm({...EMPTY_FORM,...currentPatient,poids_obj:currentPatient.poids_obj||"",moral:currentPatient.moral||""});setEditId(currentPatient.id);setModal("patient");}}
               onDelete={()=>deletePatient(currentPatient.id)}
               onGenPlan={()=>{setPlanMode("choice");setPlanState("idle");setPlanResult(null);setModal("plan");}}
               onAddNote={()=>setModal("note")}
-              onExportPDF={()=>exportPatientPDF(currentPatient,profilePlans,profileNotes,profilePoids)}
+              onExportPDF={()=>exportPatientPDF(currentPatient,profilePlans,profileNotes)}
             />
           )}
         </div>
@@ -777,6 +923,14 @@ export default function App() {
                   </label>);
                 })}
               </div>
+              <SectionTitle>Bilan sante initial</SectionTitle>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <FormSelect label="Qualite du sommeil" value={form.sommeil} onChange={ff("sommeil")} options={[{v:"",l:"-"},...Object.entries(SOMMEIL_FR).map(([v,l])=>({v,l}))]}/>
+                <FormSelect label="Transit intestinal" value={form.transit} onChange={ff("transit")} options={[{v:"",l:"-"},...Object.entries(TRANSIT_FR).map(([v,l])=>({v,l}))]}/>
+                <FormSelect label="Moral (1 a 5)" value={form.moral} onChange={ff("moral")} options={[{v:"",l:"-"},{v:"1",l:"1 - Tres mauvais"},{v:"2",l:"2 - Mauvais"},{v:"3",l:"3 - Moyen"},{v:"4",l:"4 - Bon"},{v:"5",l:"5 - Excellent"}]}/>
+                <FormSelect label="Alimentation dominante" value={form.alimentation} onChange={ff("alimentation")} options={[{v:"",l:"-"},...Object.entries(ALIM_FR).map(([v,l])=>({v,l}))]}/>
+              </div>
+              <div style={S.formGroup}><label style={S.label}>Resultats prise de sang</label><textarea style={{...S.textarea,minHeight:60}} value={form.prise_de_sang} onChange={e=>ff("prise_de_sang")(e.target.value)} placeholder="Ex: cholesterol 2.1, glycemie 0.95, ferritine 45..."/></div>
               <SectionTitle>Informations medicales</SectionTitle>
               <div style={S.formGroup}><label style={S.label}>Antecedents / pathologies</label><textarea style={S.textarea} value={form.antecedents} onChange={e=>ff("antecedents")(e.target.value)} placeholder="Ex: hypertension, diabete type 2..."/></div>
               <div style={S.formGroup}><label style={S.label}>Allergies alimentaires</label><textarea style={{...S.textarea,minHeight:55}} value={form.allergies} onChange={e=>ff("allergies")(e.target.value)} placeholder="Ex: arachides, fruits a coque..."/></div>

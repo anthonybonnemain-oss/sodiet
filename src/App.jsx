@@ -641,8 +641,7 @@ export default function App() {
   };
 
   const handleShare = (result) => {
-    const lines=(result.days||[]).flatMap(day=>["\n== "+day.label+" ==",...(day.meals||[]).filter(m=>m.content).map(m=>m.name+(m.grammage?" ("+m.grammage+")")+" : "+m.content)]);
-    if(result.tips)lines.push("\nConseils : "+result.tips);
+const lines=(result.days||[]).flatMap(day=>["\n== "+day.label+" ==",...(day.meals||[]).filter(m=>m.content).map(m=>m.name+(m.grammage?" ("+m.grammage+")":"")+" : "+m.content)]);    if(result.tips)lines.push("\nConseils : "+result.tips);
     window.location.href="mailto:"+(currentPatient?.email||"")+"?subject=Plan alimentaire SoDiet&body="+encodeURIComponent("Plan alimentaire - "+(currentPatient?.prenom)+" "+(currentPatient?.nom)+"\n"+lines.join("\n"));
   };
 

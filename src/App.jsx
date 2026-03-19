@@ -565,7 +565,25 @@ export default function App() {
     else{setAuthError("Email ou mot de passe incorrect");}
     setAuthLoading(false);
   };
-
+useEffect(() => {
+    if (!session) return;
+    const refresh = async () => {
+      try {
+        const res = await fetch(SUPA_URL + "/auth/v1/token?grant_type=refresh_token", {
+          method: "POST",
+          headers: { "apikey": SUPA_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: session.refresh_token })
+        });
+        const data = await res.json();
+        if (data.access_token) {
+          localStorage.setItem("sodiet_session", JSON.stringify(data));
+          setSession(data);
+        }
+      } catch(e) { console.error("Refresh token error:", e); }
+    };
+    const interval = setInterval(refresh, 45 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [session]);
   const handleLogout = async () => { await db.logout(token); localStorage.removeItem("sodiet_session"); setSession(null); setPatients([]); };
 
   useEffect(()=>{ if(!session) return; setLoadingPatients(true); db.getPatients(token).then(data=>{setPatients(data||[]);setLoadingPatients(false);}).catch(()=>setLoadingPatients(false)); },[session]);

@@ -753,8 +753,7 @@ const lines=(result.days||[]).flatMap(day=>["\n== "+day.label+" ==",...(day.meal
               </div>
               <SectionTitle>Regime et restrictions</SectionTitle>
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                {Object.entries(DIET_FR).map(([v,l])=>{const checked=(form.diets||[]).includes(v);return(<label key={v} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",border:"1.5px solid "+(checked?"#C4956A":"#E8DDD0"),borderRadius:8,cursor:"pointer",fontSize:12,background:checked?"rgba(196,149,106,0.1)":"white",color:checked?"#8B5E3C":"#3D3228"}}><input type="checkbox" style={{display:"none"}} checked={checked} onChange={e=>setForm(f=>({...f,diets:e.target.checked?[...(f.diets||[]),v]:(f.diets||[]).filter(d=>d!==v)})}/>{l}</label>);})}
-              </div>
+{Object.entries(DIET_FR).map(([v,l])=>{const checked=(form.diets||[]).includes(v);return(<label key={v} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",border:"1.5px solid "+(checked?"#C4956A":"#E8DDD0"),borderRadius:8,cursor:"pointer",fontSize:12,background:checked?"rgba(196,149,106,0.1)":"white",color:checked?"#8B5E3C":"#3D3228"}}><input type="checkbox" style={{display:"none"}} checked={checked} onChange={e=>setForm(f=>({...f,diets:e.target.checked?[...(f.diets||[]),v]:(f.diets||[]).filter(d=>d!==v)}))} />{l}</label>);})}              </div>
               <SectionTitle>Bilan sante initial</SectionTitle>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <FormSelect label="Qualite du sommeil" value={form.sommeil} onChange={ff("sommeil")} options={[{v:"",l:"-"},...Object.entries(SOMMEIL_FR).map(([v,l])=>({v,l}))]}/>

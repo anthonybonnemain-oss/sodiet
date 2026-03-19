@@ -29,11 +29,10 @@ const db = {
   getPoids: (pid, token) => supaFetch("poids_historique?patient_id=eq." + pid + "&order=date.asc", { token }),
   addPoids: (p, token) => supaFetch("poids_historique", { method: "POST", body: p, token }),
   deletePoids: (id, token) => supaFetch("poids_historique?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
-getRDV: (token) => supaFetch("rendez_vous?select=*,patients(prenom,nom)&order=date.asc,heure.asc", { token }),
+  getRDV: (token) => supaFetch("rendez_vous?select=*,patients(prenom,nom)&order=date.asc,heure.asc", { token }),
   addRDV: (r, token) => supaFetch("rendez_vous", { method: "POST", body: r, token }),
   deleteRDV: (id, token) => supaFetch("rendez_vous?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
 };
-
 
 const COLORS = ["#C4956A","#3D5A47","#7A9E7E","#8B5E3C","#5B7A8B","#9B6B8A","#6B8B6B"];
 const GOALS_FR = { perte_poids:"Perte de poids", reeducation:"Reeducation alimentaire", prise_masse:"Prise de masse", sante:"Sante generale", sport:"Performance sportive" };
@@ -48,6 +47,7 @@ const calcBMI = (p,t) => { if(!p||!t) return "-"; return (p/Math.pow(t/100,2)).t
 const emptyDay = (i) => ({ label:"Jour "+(i+1), meals:MEAL_NAMES.map(name=>({name,content:""})) });
 const emptyManualPlan = (n) => Array.from({length:n},(_,i)=>emptyDay(i));
 const EMPTY_FORM = { prenom:"",nom:"",ddn:"",sexe:"",email:"",tel:"",taille:"",poids:"",poids_obj:"",objectif:"perte_poids",activite:"sedentaire",diets:[],antecedents:"",allergies:"",notes:"" };
+const EMPTY_RDV = { patient_id:"", date:"", heure:"08:00", duree:60, note:"" };
 
 const S = {
   app: { display:"flex", minHeight:"100vh", fontFamily:"'DM Sans',sans-serif", background:"#FAF7F2", color:"#3D3228" },
@@ -93,190 +93,7 @@ const S = {
   planMealContent: { fontSize:13, color:"#3D3228", lineHeight:1.5 },
 };
 
-// ── Weight Chart ──────────────────────────────────────────────────────────────
-function PoidsChart({ data, objectif }) {
-  if (!data || data.length === 0) return (
-    <p style={{ fontSize:12, color:"#8A7968", fontStyle:"italic" }}>Aucune mesure enregistree. Ajoutez une mesure pour voir la courbe.</p>
-  );
-
-  const W = 580, H = 200, PL = 45, PR = 20, PT = 20, PB = 35;
-  const cw = W - PL - PR, ch = H - PT - PB;
-  const weights = data.map(d => d.poids);
-  const allWeights = objectif ? [...weights, +objectif] : weights;
-  const minW = Math.min(...allWeights) - 2;
-  const maxW = Math.max(...allWeights) + 2;
-  const range = maxW - minW || 1;
-
-  const x = (i) => PL + (i / (data.length - 1 || 1)) * cw;
-  const y = (w) => PT + ch - ((w - minW) / range) * ch;
-
-  const pathD = data.map((d, i) => (i === 0 ? "M" : "L") + x(i).toFixed(1) + "," + y(d.poids).toFixed(1)).join(" ");
-  const areaD = pathD + " L" + x(data.length-1).toFixed(1) + "," + (PT+ch) + " L" + PL + "," + (PT+ch) + " Z";
-
-  const ticks = 4;
-  const yTicks = Array.from({length:ticks+1}, (_,i) => minW + (range/ticks)*i);
-
-  return (
-    <svg viewBox={"0 0 "+W+" "+H} style={{ width:"100%", height:"auto" }}>
-      {yTicks.map((t,i) => (
-        <g key={i}>
-          <line x1={PL} y1={y(t).toFixed(1)} x2={W-PR} y2={y(t).toFixed(1)} stroke="#F0EBE1" strokeWidth="1"/>
-          <text x={PL-6} y={y(t)+4} textAnchor="end" fontSize="9" fill="#8A7968">{t.toFixed(1)}</text>
-        </g>
-      ))}
-      {objectif && (
-        <line x1={PL} y1={y(+objectif).toFixed(1)} x2={W-PR} y2={y(+objectif).toFixed(1)} stroke="#7A9E7E" strokeWidth="1.5" strokeDasharray="4,3"/>
-      )}
-      <defs>
-        <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#C4956A" stopOpacity="0.25"/>
-          <stop offset="100%" stopColor="#C4956A" stopOpacity="0.02"/>
-        </linearGradient>
-      </defs>
-      <path d={areaD} fill="url(#wg)"/>
-      <path d={pathD} fill="none" stroke="#C4956A" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
-      {data.map((d,i) => (
-        <g key={i}>
-          <circle cx={x(i).toFixed(1)} cy={y(d.poids).toFixed(1)} r="4" fill="white" stroke="#C4956A" strokeWidth="2"/>
-          <text x={x(i).toFixed(1)} y={y(d.poids)-10} textAnchor="middle" fontSize="9" fill="#8B5E3C" fontWeight="600">{d.poids}kg</text>
-        </g>
-      ))}
-      {data.map((d,i) => (
-        <text key={i} x={x(i).toFixed(1)} y={H-8} textAnchor="middle" fontSize="8" fill="#8A7968">
-          {new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})}
-        </text>
-      ))}
-      {objectif && (
-        <text x={W-PR} y={y(+objectif)-5} textAnchor="end" fontSize="9" fill="#7A9E7E">Objectif {objectif}kg</text>
-      )}
-    </svg>
-  );
-}
-
-function PoidsSection({ patientId, objectif, token }) {
-  const [poidsData, setPoidsData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [newPoids, setNewPoids] = useState("");
-  const [newDate, setNewDate] = useState(new Date().toISOString().split("T")[0]);
-  const [newNote, setNewNote] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    db.getPoids(patientId, token).then(d => { setPoidsData(d||[]); setLoading(false); }).catch(()=>setLoading(false));
-  }, [patientId]);
-
-  const addMesure = async () => {
-    if (!newPoids) return;
-    setSaving(true);
-    try {
-      const [entry] = await db.addPoids({ patient_id:patientId, poids:+newPoids, date:newDate, note:newNote||null }, token);
-      const updated = [...poidsData, entry].sort((a,b)=>new Date(a.date)-new Date(b.date));
-      setPoidsData(updated);
-      setNewPoids(""); setNewNote("");
-    } catch(e) { alert("Erreur : "+e.message); }
-    setSaving(false);
-  };
-
-  const deleteMesure = async (id) => {
-    await db.deletePoids(id, token);
-    setPoidsData(d => d.filter(x => x.id !== id));
-  };
-
-  const poidsDiff = poidsData.length >= 2
-    ? (poidsData[poidsData.length-1].poids - poidsData[0].poids).toFixed(1)
-    : null;
-
-  return (
-    <div style={S.infoCard}>
-      <div style={S.infoTitle}>Suivi du poids</div>
-      {loading ? <Spinner/> : (
-        <>
-          {poidsData.length >= 2 && (
-            <div style={{ display:"flex", gap:12, marginBottom:16 }}>
-              {[
-                ["Debut", poidsData[0].poids+"kg"],
-                ["Actuel", poidsData[poidsData.length-1].poids+"kg"],
-                ["Evolution", (poidsDiff > 0 ? "+" : "")+poidsDiff+"kg"],
-                ["Objectif", objectif ? objectif+"kg" : "-"]
-              ].map(([k,v])=>(
-                <div key={k} style={{ flex:1, background:"#F0EBE1", borderRadius:10, padding:"10px 14px", textAlign:"center" }}>
-                  <div style={{ fontSize:14, fontWeight:600, color: k==="Evolution" ? (poidsDiff<=0?"#3D5A47":"#c8503c") : "#2A2118" }}>{v}</div>
-                  <div style={{ fontSize:10, color:"#8A7968", textTransform:"uppercase", letterSpacing:"0.8px", marginTop:2 }}>{k}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          <div style={{ marginBottom:16, background:"#FDFAF7", borderRadius:10, padding:12 }}>
-            <PoidsChart data={poidsData} objectif={objectif}/>
-          </div>
-          <div style={{ borderTop:"1px solid #F0EBE1", paddingTop:14, marginBottom:14 }}>
-            <div style={{ fontSize:11, fontWeight:600, color:"#8A7968", textTransform:"uppercase", letterSpacing:"1px", marginBottom:10 }}>Ajouter une mesure</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 2fr auto", gap:8, alignItems:"end" }}>
-              <div style={S.formGroup}>
-                <label style={S.label}>Poids (kg)</label>
-                <input type="number" step="0.1" value={newPoids} onChange={e=>setNewPoids(e.target.value)} placeholder="72.5" style={S.input}/>
-              </div>
-              <div style={S.formGroup}>
-                <label style={S.label}>Date</label>
-                <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={S.input}/>
-              </div>
-              <div style={S.formGroup}>
-                <label style={S.label}>Note (optionnel)</label>
-                <input type="text" value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Ex: apres sport..." style={S.input}/>
-              </div>
-              <button onClick={addMesure} disabled={saving||!newPoids} style={{...S.btn("primary"), marginBottom:14}}>
-                {saving ? "..." : "+ Ajouter"}
-              </button>
-            </div>
-          </div>
-          {poidsData.length > 0 && (
-            <div>
-              <div style={{ fontSize:11, fontWeight:600, color:"#8A7968", textTransform:"uppercase", letterSpacing:"1px", marginBottom:8 }}>Historique</div>
-              <div style={{ maxHeight:160, overflowY:"auto" }}>
-                {[...poidsData].reverse().map((d,i)=>(
-                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:"1px solid #F0EBE1", fontSize:13 }}>
-                    <span style={{ color:"#8A7968" }}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</span>
-                    <span style={{ fontWeight:600 }}>{d.poids} kg</span>
-                    {d.note && <span style={{ fontSize:11, color:"#8A7968", fontStyle:"italic" }}>{d.note}</span>}
-                    <button onClick={()=>deleteMesure(d.id)} style={{ background:"none", border:"none", cursor:"pointer", color:"#c8503c", fontSize:16, padding:"0 4px" }}>×</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function LoginPage({ onLogin, error, loading }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  return (
-    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#FAF7F2", fontFamily:"'DM Sans',sans-serif" }}>
-      <div style={{ background:"white", borderRadius:20, padding:"48px 40px", width:"100%", maxWidth:400, boxShadow:"0 20px 60px rgba(42,33,24,0.12)", border:"1px solid #E8DDD0" }}>
-        <div style={{ textAlign:"center", marginBottom:36 }}>
-          <div style={{ fontFamily:"Georgia,serif", fontSize:28, color:"#2A2118", marginBottom:6 }}>SoDiet</div>
-          <div style={{ fontSize:11, color:"#C4956A", letterSpacing:"2px", textTransform:"uppercase" }}>Espace praticien</div>
-        </div>
-        <div style={S.formGroup}>
-          <label style={S.label}>Email</label>
-          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="votre@email.com" style={{...S.input,width:"100%",boxSizing:"border-box"}}/>
-        </div>
-        <div style={{...S.formGroup,marginBottom:24}}>
-          <label style={S.label}>Mot de passe</label>
-          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" style={{...S.input,width:"100%",boxSizing:"border-box"}}/>
-        </div>
-        {error && <div style={{ background:"#fff0ee", border:"1px solid #f5c0b8", borderRadius:8, padding:"10px 14px", fontSize:12, color:"#c8503c", marginBottom:16 }}>{error}</div>}
-        <button onClick={()=>onLogin(email,password)} disabled={loading} style={{ width:"100%", padding:"12px", background:"#C4956A", color:"white", border:"none", borderRadius:10, fontSize:14, fontWeight:500, cursor:"pointer", fontFamily:"inherit" }}>
-          {loading ? "Connexion..." : "Se connecter"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
+// ── Composants utilitaires ────────────────────────────────────────────────────
 function FormInput({label,type,value,onChange,placeholder}) {
   return <div style={S.formGroup}><label style={S.label}>{label}</label><input style={S.input} type={type||"text"} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""}/></div>;
 }
@@ -316,8 +133,178 @@ function PlanDays({days}) {
   );
 }
 
+// ── Weight Chart ──────────────────────────────────────────────────────────────
+function PoidsChart({data, objectif}) {
+  if(!data||data.length===0) return <p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune mesure. Ajoutez une mesure pour voir la courbe.</p>;
+  const W=580,H=200,PL=45,PR=20,PT=20,PB=35;
+  const cw=W-PL-PR,ch=H-PT-PB;
+  const weights=data.map(d=>d.poids);
+  const allW=objectif?[...weights,+objectif]:weights;
+  const minW=Math.min(...allW)-2,maxW=Math.max(...allW)+2,range=maxW-minW||1;
+  const x=(i)=>PL+(i/(data.length-1||1))*cw;
+  const y=(w)=>PT+ch-((w-minW)/range)*ch;
+  const pathD=data.map((d,i)=>(i===0?"M":"L")+x(i).toFixed(1)+","+y(d.poids).toFixed(1)).join(" ");
+  const areaD=pathD+" L"+x(data.length-1).toFixed(1)+","+(PT+ch)+" L"+PL+","+(PT+ch)+" Z";
+  const ticks=4;
+  const yTicks=Array.from({length:ticks+1},(_,i)=>minW+(range/ticks)*i);
+  return (
+    <svg viewBox={"0 0 "+W+" "+H} style={{width:"100%",height:"auto"}}>
+      {yTicks.map((t,i)=>(<g key={i}><line x1={PL} y1={y(t).toFixed(1)} x2={W-PR} y2={y(t).toFixed(1)} stroke="#F0EBE1" strokeWidth="1"/><text x={PL-6} y={y(t)+4} textAnchor="end" fontSize="9" fill="#8A7968">{t.toFixed(1)}</text></g>))}
+      {objectif&&<line x1={PL} y1={y(+objectif).toFixed(1)} x2={W-PR} y2={y(+objectif).toFixed(1)} stroke="#7A9E7E" strokeWidth="1.5" strokeDasharray="4,3"/>}
+      <defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#C4956A" stopOpacity="0.25"/><stop offset="100%" stopColor="#C4956A" stopOpacity="0.02"/></linearGradient></defs>
+      <path d={areaD} fill="url(#wg)"/>
+      <path d={pathD} fill="none" stroke="#C4956A" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
+      {data.map((d,i)=>(<g key={i}><circle cx={x(i).toFixed(1)} cy={y(d.poids).toFixed(1)} r="4" fill="white" stroke="#C4956A" strokeWidth="2"/><text x={x(i).toFixed(1)} y={y(d.poids)-10} textAnchor="middle" fontSize="9" fill="#8B5E3C" fontWeight="600">{d.poids}kg</text></g>))}
+      {data.map((d,i)=>(<text key={i} x={x(i).toFixed(1)} y={H-8} textAnchor="middle" fontSize="8" fill="#8A7968">{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})}</text>))}
+      {objectif&&<text x={W-PR} y={y(+objectif)-5} textAnchor="end" fontSize="9" fill="#7A9E7E">Objectif {objectif}kg</text>}
+    </svg>
+  );
+}
+
+function PoidsSection({patientId, objectif, token}) {
+  const [poidsData, setPoidsData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newPoids, setNewPoids] = useState("");
+  const [newDate, setNewDate] = useState(new Date().toISOString().split("T")[0]);
+  const [newNote, setNewNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(()=>{ db.getPoids(patientId,token).then(d=>{setPoidsData(d||[]);setLoading(false);}).catch(()=>setLoading(false)); },[patientId]);
+
+  const addMesure = async () => {
+    if(!newPoids) return;
+    setSaving(true);
+    try {
+      const [entry]=await db.addPoids({patient_id:patientId,poids:+newPoids,date:newDate,note:newNote||null},token);
+      setPoidsData(d=>[...d,entry].sort((a,b)=>new Date(a.date)-new Date(b.date)));
+      setNewPoids(""); setNewNote("");
+    } catch(e){alert("Erreur : "+e.message);}
+    setSaving(false);
+  };
+
+  const deleteMesure = async (id) => { await db.deletePoids(id,token); setPoidsData(d=>d.filter(x=>x.id!==id)); };
+  const poidsDiff = poidsData.length>=2?(poidsData[poidsData.length-1].poids-poidsData[0].poids).toFixed(1):null;
+
+  return (
+    <div style={S.infoCard}>
+      <div style={S.infoTitle}>Suivi du poids</div>
+      {loading?<Spinner/>:(
+        <>
+          {poidsData.length>=2&&(
+            <div style={{display:"flex",gap:12,marginBottom:16}}>
+              {[["Debut",poidsData[0].poids+"kg"],["Actuel",poidsData[poidsData.length-1].poids+"kg"],["Evolution",(poidsDiff>0?"+":"")+poidsDiff+"kg"],["Objectif",objectif?objectif+"kg":"-"]].map(([k,v])=>(
+                <div key={k} style={{flex:1,background:"#F0EBE1",borderRadius:10,padding:"10px 14px",textAlign:"center"}}>
+                  <div style={{fontSize:14,fontWeight:600,color:k==="Evolution"?(poidsDiff<=0?"#3D5A47":"#c8503c"):"#2A2118"}}>{v}</div>
+                  <div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:2}}>{k}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{marginBottom:16,background:"#FDFAF7",borderRadius:10,padding:12}}><PoidsChart data={poidsData} objectif={objectif}/></div>
+          <div style={{borderTop:"1px solid #F0EBE1",paddingTop:14,marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>Ajouter une mesure</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr auto",gap:8,alignItems:"end"}}>
+              <div style={S.formGroup}><label style={S.label}>Poids (kg)</label><input type="number" step="0.1" value={newPoids} onChange={e=>setNewPoids(e.target.value)} placeholder="72.5" style={S.input}/></div>
+              <div style={S.formGroup}><label style={S.label}>Date</label><input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={S.input}/></div>
+              <div style={S.formGroup}><label style={S.label}>Note (optionnel)</label><input type="text" value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Ex: apres sport..." style={S.input}/></div>
+              <button onClick={addMesure} disabled={saving||!newPoids} style={{...S.btn("primary"),marginBottom:14}}>{saving?"...":"+ Ajouter"}</button>
+            </div>
+          </div>
+          {poidsData.length>0&&(
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Historique</div>
+              <div style={{maxHeight:160,overflowY:"auto"}}>
+                {[...poidsData].reverse().map((d,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #F0EBE1",fontSize:13}}>
+                    <span style={{color:"#8A7968"}}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</span>
+                    <span style={{fontWeight:600}}>{d.poids} kg</span>
+                    {d.note&&<span style={{fontSize:11,color:"#8A7968",fontStyle:"italic"}}>{d.note}</span>}
+                    <button onClick={()=>deleteMesure(d.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:16,padding:"0 4px"}}>x</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Agenda ────────────────────────────────────────────────────────────────────
+function AgendaView({rdvList, loadingRDV, patients, onAddRDV, onDeleteRDV}) {
+  const today = new Date().toISOString().split("T")[0];
+  const upcoming = rdvList.filter(r=>r.date>=today);
+  const past = [...rdvList.filter(r=>r.date<today)].reverse();
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+        <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Rendez-vous a venir</div>
+        <button style={S.btn("primary")} onClick={onAddRDV}>+ Nouveau RDV</button>
+      </div>
+      {loadingRDV?<Spinner/>:upcoming.length===0
+        ?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>📅</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun rendez-vous</div><div style={{fontSize:13}}>Ajoutez votre premier RDV</div></div>
+        :upcoming.map((r,i)=>(
+          <div key={i} style={{...S.infoCard,display:"flex",alignItems:"center",gap:16,padding:"16px 20px"}}>
+            <div style={{background:"#C4956A",color:"white",borderRadius:10,padding:"10px 14px",textAlign:"center",minWidth:56}}>
+              <div style={{fontSize:20,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
+              <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"1px"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:600,color:"#2A2118",fontSize:14}}>{r.patients?.prenom} {r.patients?.nom}</div>
+              <div style={{fontSize:12,color:"#8A7968",marginTop:2}}>{r.heure.slice(0,5)} — {r.duree} min{r.note?" · "+r.note:""}</div>
+            </div>
+            <button onClick={()=>onDeleteRDV(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:20}}>x</button>
+          </div>
+        ))
+      }
+      {past.length>0&&(
+        <div style={{marginTop:24}}>
+          <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#8A7968",marginBottom:12}}>Passes</div>
+          {past.map((r,i)=>(
+            <div key={i} style={{...S.infoCard,display:"flex",alignItems:"center",gap:16,padding:"12px 20px",opacity:0.6}}>
+              <div style={{background:"#8A7968",color:"white",borderRadius:10,padding:"8px 12px",textAlign:"center",minWidth:48}}>
+                <div style={{fontSize:16,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
+                <div style={{fontSize:9,textTransform:"uppercase"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,color:"#2A2118",fontSize:13}}>{r.patients?.prenom} {r.patients?.nom}</div>
+                <div style={{fontSize:12,color:"#8A7968",marginTop:2}}>{r.heure.slice(0,5)} — {r.duree} min</div>
+              </div>
+              <button onClick={()=>onDeleteRDV(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:18}}>x</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Login ─────────────────────────────────────────────────────────────────────
+function LoginPage({onLogin, error, loading}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FAF7F2",fontFamily:"'DM Sans',sans-serif"}}>
+      <div style={{background:"white",borderRadius:20,padding:"48px 40px",width:"100%",maxWidth:400,boxShadow:"0 20px 60px rgba(42,33,24,0.12)",border:"1px solid #E8DDD0"}}>
+        <div style={{textAlign:"center",marginBottom:36}}>
+          <div style={{fontFamily:"Georgia,serif",fontSize:28,color:"#2A2118",marginBottom:6}}>SoDiet</div>
+          <div style={{fontSize:11,color:"#C4956A",letterSpacing:"2px",textTransform:"uppercase"}}>Espace praticien</div>
+        </div>
+        <div style={S.formGroup}><label style={S.label}>Email</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="votre@email.com" style={{...S.input,width:"100%",boxSizing:"border-box"}}/></div>
+        <div style={{...S.formGroup,marginBottom:24}}><label style={S.label}>Mot de passe</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" style={{...S.input,width:"100%",boxSizing:"border-box"}}/></div>
+        {error&&<div style={{background:"#fff0ee",border:"1px solid #f5c0b8",borderRadius:8,padding:"10px 14px",fontSize:12,color:"#c8503c",marginBottom:16}}>{error}</div>}
+        <button onClick={()=>onLogin(email,password)} disabled={loading} style={{width:"100%",padding:"12px",background:"#C4956A",color:"white",border:"none",borderRadius:10,fontSize:14,fontWeight:500,cursor:"pointer",fontFamily:"inherit"}}>
+          {loading?"Connexion...":"Se connecter"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Patient components ────────────────────────────────────────────────────────
 function PatientCard({p,onClick}) {
-  const bmi = calcBMI(p.poids,p.taille);
+  const bmi=calcBMI(p.poids,p.taille);
   return (
     <div style={S.card} onClick={onClick}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
@@ -344,8 +331,8 @@ function PatientCard({p,onClick}) {
 }
 
 function ManualPlanEditor({days,tips,onDaysChange,onTipsChange}) {
-  const updateMeal = (di,mi,val) => onDaysChange(days.map((d,i)=>i!==di?d:{...d,meals:d.meals.map((m,j)=>j!==mi?m:{...m,content:val})}));
-  const updateLabel = (di,val) => onDaysChange(days.map((d,i)=>i===di?{...d,label:val}:d));
+  const updateMeal=(di,mi,val)=>onDaysChange(days.map((d,i)=>i!==di?d:{...d,meals:d.meals.map((m,j)=>j!==mi?m:{...m,content:val})}));
+  const updateLabel=(di,val)=>onDaysChange(days.map((d,i)=>i===di?{...d,label:val}:d));
   return (
     <div style={{maxHeight:"54vh",overflowY:"auto",paddingRight:4}}>
       {days.map((day,di)=>(
@@ -365,15 +352,13 @@ function ManualPlanEditor({days,tips,onDaysChange,onTipsChange}) {
           </div>
         </div>
       ))}
-      <div style={S.formGroup}>
-        <label style={S.label}>Conseils (optionnel)</label>
-        <textarea style={{...S.textarea,minHeight:55}} value={tips} onChange={e=>onTipsChange(e.target.value)} placeholder="Ex: bien s'hydrater..."/>
-      </div>
+      <div style={S.formGroup}><label style={S.label}>Conseils (optionnel)</label><textarea style={{...S.textarea,minHeight:55}} value={tips} onChange={e=>onTipsChange(e.target.value)} placeholder="Ex: bien s'hydrater..."/></div>
     </div>
   );
 }
 
-function ProfileView({p,plans,notes,token,poidsData,onBack,onEdit,onDelete,onGenPlan,onAddNote,onExportPDF,loading}) {  const bmi = calcBMI(p.poids,p.taille);
+function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAddNote,onExportPDF,loading}) {
+  const bmi=calcBMI(p.poids,p.taille);
   return (
     <div>
       <button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:6,color:"#8A7968",fontSize:13,cursor:"pointer",marginBottom:20,background:"none",border:"none",fontFamily:"'DM Sans',sans-serif"}}>← Retour</button>
@@ -448,19 +433,19 @@ function ProfileView({p,plans,notes,token,poidsData,onBack,onEdit,onDelete,onGen
             }
           </div>
           {p.notes&&<div style={S.infoCard}><div style={S.infoTitle}>Notes initiales</div><p style={{fontSize:13,color:"#3D3228",lineHeight:1.6}}>{p.notes}</p></div>}
-          <div style={{textAlign:"right",marginTop:8}}>
-<div style={{textAlign:"right",marginTop:8,display:"flex",justifyContent:"flex-end",gap:8}}>
-  <button onClick={onExportPDF} style={{...S.btn("secondary"),color:"#3D5A47",border:"1px solid #3D5A47"}}>📄 Exporter PDF</button>
-  <button onClick={onDelete} style={{...S.btn("secondary"),color:"#c8503c",border:"1px solid #c8503c",background:"white"}}>Supprimer ce patient</button>
-</div>          </div>
+          <div style={{textAlign:"right",marginTop:8,display:"flex",justifyContent:"flex-end",gap:8}}>
+            <button onClick={onExportPDF} style={{...S.btn("secondary"),color:"#3D5A47",border:"1px solid #3D5A47"}}>Exporter PDF</button>
+            <button onClick={onDelete} style={{...S.btn("secondary"),color:"#c8503c",border:"1px solid #c8503c",background:"white"}}>Supprimer ce patient</button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
+// ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [session, setSession] = useState(() => { try { const s=localStorage.getItem("sodiet_session"); return s?JSON.parse(s):null; } catch { return null; } });
+  const [session, setSession] = useState(()=>{try{const s=localStorage.getItem("sodiet_session");return s?JSON.parse(s):null;}catch{return null;}});
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [patients, setPatients] = useState([]);
@@ -471,6 +456,9 @@ export default function App() {
   const [profileNotes, setProfileNotes] = useState([]);
   const [profilePoids, setProfilePoids] = useState([]);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [rdvList, setRdvList] = useState([]);
+  const [loadingRDV, setLoadingRDV] = useState(false);
+  const [rdvForm, setRdvForm] = useState(EMPTY_RDV);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState(null);
@@ -486,19 +474,16 @@ export default function App() {
   const [manualTips, setManualTips] = useState("");
   const [noteText, setNoteText] = useState("");
   const [totalPlans, setTotalPlans] = useState(0);
-  const [rdvList, setRdvList] = useState([]);
-const [loadingRDV, setLoadingRDV] = useState(false);
 
   const token = session?.access_token;
   const currentPatient = patients.find(p=>p.id===currentId);
   const ff = (k) => (v) => setForm(f=>({...f,[k]:v}));
-  const [rdvForm, setRdvForm] = useState({ patient_id:"", date:"", heure:"08:00", duree:60, note:"" });
 
   const handleLogin = async (email, password) => {
     setAuthLoading(true); setAuthError("");
     const data = await db.login(email, password);
-    if (data.access_token) { localStorage.setItem("sodiet_session", JSON.stringify(data)); setSession(data); }
-    else { setAuthError("Email ou mot de passe incorrect"); }
+    if(data.access_token){localStorage.setItem("sodiet_session",JSON.stringify(data));setSession(data);}
+    else{setAuthError("Email ou mot de passe incorrect");}
     setAuthLoading(false);
   };
 
@@ -511,53 +496,40 @@ const [loadingRDV, setLoadingRDV] = useState(false);
   useEffect(()=>{
     if(!session) return;
     setLoadingPatients(true);
-    db.getPatients(token).then(data=>{ setPatients(data||[]); setLoadingPatients(false); }).catch(()=>setLoadingPatients(false));
+    db.getPatients(token).then(data=>{setPatients(data||[]);setLoadingPatients(false);}).catch(()=>setLoadingPatients(false));
+  },[session]);
+
+  useEffect(()=>{
+    if(!session) return;
+    setLoadingRDV(true);
+    db.getRDV(token).then(data=>{setRdvList(data||[]);setLoadingRDV(false);}).catch(()=>setLoadingRDV(false));
   },[session]);
 
   useEffect(()=>{
     if(panel==="profile"&&currentId&&token){
       setProfileLoading(true);
-      Promise.all([db.getPlans(currentId,token), db.getNotes(currentId,token), db.getPoids(currentId,token)])
-  .then(([plans,notes,poids])=>{ setProfilePlans(plans||[]); setProfileNotes(notes||[]); setProfilePoids(poids||[]); setProfileLoading(false); })
-        .then(([plans,notes])=>{ setProfilePlans(plans||[]); setProfileNotes(notes||[]); setProfileLoading(false); })
+      Promise.all([db.getPlans(currentId,token),db.getNotes(currentId,token)])
+        .then(([plans,notes])=>{setProfilePlans(plans||[]);setProfileNotes(notes||[]);setProfileLoading(false);})
         .catch(()=>setProfileLoading(false));
-    } useEffect(()=>{
-    if(!session) return;
-    setLoadingRDV(true);
-    db.getRDV(token).then(data=>{ setRdvList(data||[]); setLoadingRDV(false); }).catch(()=>setLoadingRDV(false));
-  },[session]);
+    }
   },[panel,currentId]);
-const saveRDV = async () => {
-    if(!rdvForm.patient_id||!rdvForm.date||!rdvForm.heure) { alert("Patient, date et heure requis"); return; }
-    setSaving(true);
-    try {
-      const [rdv] = await db.addRDV(rdvForm, token);
-      setRdvList(rs=>[...rs,rdv].sort((a,b)=>a.date+a.heure>b.date+b.heure?1:-1));
-      setRdvForm({ patient_id:"", date:"", heure:"08:00", duree:60, note:"" });
-      closeModal();
-    } catch(e) { alert("Erreur : "+e.message); }
-    setSaving(false);
-  };
 
-  const deleteRDV = async (id) => {
-    await db.deleteRDV(id, token);
-    setRdvList(rs=>rs.filter(r=>r.id!==id));
-  };
   const closeModal = () => {
     setModal(null); setPlanMode("choice"); setPlanState("idle");
     setPlanResult(null); setPlanInstr(""); setPlanDuration("3j");
     setPlanError(""); setManualDays([]); setManualTips("");
+    setRdvForm(EMPTY_RDV);
   };
 
   const savePatient = async () => {
-    if(!form.prenom.trim()||!form.nom.trim()) { alert("Prenom et nom requis"); return; }
+    if(!form.prenom.trim()||!form.nom.trim()){alert("Prenom et nom requis");return;}
     setSaving(true);
     try {
-      const payload = { prenom:form.prenom, nom:form.nom, ddn:form.ddn||null, sexe:form.sexe||null, email:form.email||null, tel:form.tel||null, taille:form.taille?+form.taille:null, poids:form.poids?+form.poids:null, poids_obj:form.poids_obj?+form.poids_obj:null, objectif:form.objectif, activite:form.activite, diets:form.diets||[], antecedents:form.antecedents||null, allergies:form.allergies||null, notes:form.notes||null };
-      if(editId) { await db.updatePatient(editId,payload,token); setPatients(ps=>ps.map(p=>p.id===editId?{...p,...payload}:p)); }
-      else { const [created]=await db.addPatient(payload,token); setPatients(ps=>[created,...ps]); }
+      const payload={prenom:form.prenom,nom:form.nom,ddn:form.ddn||null,sexe:form.sexe||null,email:form.email||null,tel:form.tel||null,taille:form.taille?+form.taille:null,poids:form.poids?+form.poids:null,poids_obj:form.poids_obj?+form.poids_obj:null,objectif:form.objectif,activite:form.activite,diets:form.diets||[],antecedents:form.antecedents||null,allergies:form.allergies||null,notes:form.notes||null};
+      if(editId){await db.updatePatient(editId,payload,token);setPatients(ps=>ps.map(p=>p.id===editId?{...p,...payload}:p));}
+      else{const [created]=await db.addPatient(payload,token);setPatients(ps=>[created,...ps]);}
       closeModal();
-    } catch(e) { alert("Erreur : "+e.message); }
+    }catch(e){alert("Erreur : "+e.message);}
     setSaving(false);
   };
 
@@ -570,29 +542,42 @@ const saveRDV = async () => {
   const saveNote = async () => {
     if(!noteText.trim()) return;
     setSaving(true);
-    try { const [note]=await db.addNote({patient_id:currentId,text:noteText},token); setProfileNotes(ns=>[note,...ns]); setNoteText(""); closeModal(); }
-    catch(e) { alert("Erreur : "+e.message); }
+    try{const [note]=await db.addNote({patient_id:currentId,text:noteText},token);setProfileNotes(ns=>[note,...ns]);setNoteText("");closeModal();}
+    catch(e){alert("Erreur : "+e.message);}
     setSaving(false);
   };
 
+  const saveRDV = async () => {
+    if(!rdvForm.patient_id||!rdvForm.date||!rdvForm.heure){alert("Patient, date et heure requis");return;}
+    setSaving(true);
+    try{
+      const [rdv]=await db.addRDV(rdvForm,token);
+      setRdvList(rs=>[...rs,rdv].sort((a,b)=>a.date+a.heure>b.date+b.heure?1:-1));
+      closeModal();
+    }catch(e){alert("Erreur : "+e.message);}
+    setSaving(false);
+  };
+
+  const deleteRDV = async (id) => { await db.deleteRDV(id,token); setRdvList(rs=>rs.filter(r=>r.id!==id)); };
+
   const saveManualPlan = async () => {
     setSaving(true);
-    try {
+    try{
       const [plan]=await db.addPlan({patient_id:currentId,duration:planDuration==="7j"?"7 jours":"3 jours",mode:"manual",tips:manualTips,days:manualDays},token);
-      setProfilePlans(ps=>[plan,...ps]); setTotalPlans(c=>c+1);
-      setPlanResult({days:manualDays,tips:manualTips}); setPlanState("done");
-    } catch(e) { alert("Erreur : "+e.message); }
+      setProfilePlans(ps=>[plan,...ps]);setTotalPlans(c=>c+1);
+      setPlanResult({days:manualDays,tips:manualTips});setPlanState("done");
+    }catch(e){alert("Erreur : "+e.message);}
     setSaving(false);
   };
 
   const generatePlan = useCallback(async () => {
-    const p = patients.find(x=>x.id===currentId);
+    const p=patients.find(x=>x.id===currentId);
     if(!p) return;
-    setPlanState("loading"); setPlanError("");
+    setPlanState("loading");setPlanError("");
     const dietStr=(p.diets||[]).map(d=>DIET_FR[d]||d).join(", ")||"aucune restriction";
     const daysCount=planDuration==="7j"?7:3;
-    const prompt="Tu es un nutritionniste expert. Genere un plan alimentaire en JSON strict.\n\nProfil: "+p.prenom+", "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"N/A")+", "+(p.taille||"?")+"cm, "+(p.poids||"?")+"kg, objectif "+(p.poids_obj||"?")+"kg, "+(GOALS_FR[p.objectif]||"?")+", "+(ACTIVITE_FR[p.activite]||"?")+", regime: "+dietStr+", allergies: "+(p.allergies||"aucune")+"."+(planInstr?" Instructions: "+planInstr+"." :"")+"\n\nReponds UNIQUEMENT avec ce JSON (rien d'autre, pas de backticks) pour "+daysCount+" jours. Sois CONCIS (max 15 mots par repas):\n{\"days\":[{\"label\":\"Jour 1\",\"meals\":[{\"name\":\"Petit-dejeuner\",\"content\":\"...\"},{\"name\":\"Dejeuner\",\"content\":\"...\"},{\"name\":\"Collation\",\"content\":\"...\"},{\"name\":\"Diner\",\"content\":\"...\"}]}],\"tips\":\"Un conseil court.\"}";
-    try {
+    const prompt="Tu es un nutritionniste expert. Genere un plan alimentaire en JSON strict.\n\nProfil: "+p.prenom+", "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"N/A")+", "+(p.taille||"?")+"cm, "+(p.poids||"?")+"kg, objectif "+(p.poids_obj||"?")+"kg, "+(GOALS_FR[p.objectif]||"?")+", "+(ACTIVITE_FR[p.activite]||"?")+", regime: "+dietStr+", allergies: "+(p.allergies||"aucune")+"."+(planInstr?" Instructions: "+planInstr+".":"")+"\n\nReponds UNIQUEMENT avec ce JSON (rien d'autre, pas de backticks) pour "+daysCount+" jours. Sois CONCIS (max 15 mots par repas):\n{\"days\":[{\"label\":\"Jour 1\",\"meals\":[{\"name\":\"Petit-dejeuner\",\"content\":\"...\"},{\"name\":\"Dejeuner\",\"content\":\"...\"},{\"name\":\"Collation\",\"content\":\"...\"},{\"name\":\"Diner\",\"content\":\"...\"}]}],\"tips\":\"Un conseil court.\"}";
+    try{
       const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:prompt}]})});
       if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||"HTTP "+res.status);}
       const data=await res.json();
@@ -601,33 +586,19 @@ const saveRDV = async () => {
       let parsed;
       try{parsed=JSON.parse(clean);}catch(e){const s=clean.indexOf("{"),end=clean.lastIndexOf("}");if(s===-1||end===-1)throw new Error("JSON invalide");parsed=JSON.parse(clean.slice(s,end+1).replace(/,\s*([}\]])/g,"$1"));}
       const [plan]=await db.addPlan({patient_id:currentId,duration:planDuration==="7j"?"7 jours":"3 jours",mode:"ai",tips:parsed.tips||"",days:parsed.days||[]},token);
-      setProfilePlans(ps=>[plan,...ps]); setTotalPlans(c=>c+1);
-      setPlanResult(parsed); setPlanState("done");
-    } catch(e){setPlanError(e.message||"Erreur inconnue");setPlanState("error");}
+      setProfilePlans(ps=>[plan,...ps]);setTotalPlans(c=>c+1);
+      setPlanResult(parsed);setPlanState("done");
+    }catch(e){setPlanError(e.message||"Erreur inconnue");setPlanState("error");}
   },[patients,currentId,planDuration,planInstr,token]);
 
-  const handleShare = (result) => {
-    const lines=(result.days||[]).flatMap(day=>["\n== "+day.label+" ==",...(day.meals||[]).filter(m=>m.content).map(m=>m.name+" : "+m.content)]);
-    if(result.tips)lines.push("\nConseils : "+result.tips);
-    window.location.href="mailto:"+(currentPatient?.email||"")+"?subject=Plan alimentaire SoDiet&body="+encodeURIComponent("Plan alimentaire - "+(currentPatient?.prenom)+" "+(currentPatient?.nom)+"\n"+lines.join("\n"));
-  };
-const exportPatientPDF = (p, plans, notes, poidsData) => {
-    const win = window.open("","_blank");
-    const bmi = calcBMI(p.poids, p.taille);
-    const poidsRows = (poidsData||[]).map(d =>
-      "<tr><td>"+new Date(d.date).toLocaleDateString("fr-FR")+"</td><td><strong>"+d.poids+" kg</strong></td><td>"+(d.note||"-")+"</td></tr>"
-    ).join("");
-    const plansHtml = (plans||[]).map((plan,i) =>
-      "<div style='margin-bottom:24px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>Plan "+(i+1)+" — "+new Date(plan.created_at).toLocaleDateString("fr-FR")+" ("+plan.duration+")</div><div style='border:1px solid #E8DDD0;border-top:none;padding:12px 14px;border-radius:0 0 6px 6px'>"+
-      (plan.days||[]).map(day=>"<div style='margin-bottom:10px'><div style='font-weight:600;color:#8B5E3C;font-size:12px;text-transform:uppercase;margin-bottom:4px'>"+day.label+"</div>"+
-      (day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:4px 0;border-bottom:1px solid #f5f5f5;font-size:13px'><strong style='color:#8A7968'>"+m.name+" :</strong> "+m.content+"</div>").join("")+"</div>").join("")+
-      (plan.tips?"<div style='background:#f0f7f2;border-left:3px solid #7A9E7E;padding:8px 12px;margin-top:8px;font-size:12px'>Conseils : "+plan.tips+"</div>":"")+"</div></div>"
-    ).join("");
-    const notesHtml = (notes||[]).map(n =>
-      "<div style='border-left:3px solid #7A9E7E;padding:8px 12px;margin-bottom:8px;background:#f9f9f9'><div style='font-size:11px;color:#8A7968;margin-bottom:4px'>"+new Date(n.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div><div style='font-size:13px'>"+n.text+"</div></div>"
-    ).join("");
-    win.document.write("<!DOCTYPE html><html><head><title>Dossier — "+p.prenom+" "+p.nom+"</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;color:#3D3228;padding:0 20px}h1{color:#2A2118;font-size:26px;margin-bottom:4px}h2{color:#C4956A;font-size:13px;letter-spacing:2px;text-transform:uppercase;margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid #E8DDD0}.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}.stat{background:#FAF7F2;border:1px solid #E8DDD0;border-radius:8px;padding:12px;text-align:center}.stat-val{font-size:20px;font-weight:600;color:#2A2118}.stat-label{font-size:10px;color:#8A7968;text-transform:uppercase;letter-spacing:1px;margin-top:2px}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#F0EBE1;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#8A7968}td{padding:8px 12px;border-bottom:1px solid #F0EBE1}.tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:rgba(61,90,71,0.12);color:#3D5A47;margin-right:4px}@media print{button{display:none}}</style></head><body>"+
-    "<div style='display:flex;justify-content:space-between;align-items:start;margin-bottom:24px'><div><h1>"+p.prenom+" "+p.nom+"</h1><div style='color:#8A7968;font-size:13px;margin-top:4px'>"+getAge(p.ddn)+(p.sexe?" - "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"Autre"):"")+(p.email?" - "+p.email:"")+"</div></div><div style='font-size:11px;color:#8A7968;text-align:right'>SoDiet — Dossier patient<br>"+new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div></div>"+
+  const exportPatientPDF = (p, plans, notes, poidsData) => {
+    const win=window.open("","_blank");
+    const bmi=calcBMI(p.poids,p.taille);
+    const poidsRows=(poidsData||[]).map(d=>"<tr><td>"+new Date(d.date).toLocaleDateString("fr-FR")+"</td><td><strong>"+d.poids+" kg</strong></td><td>"+(d.note||"-")+"</td></tr>").join("");
+    const plansHtml=(plans||[]).map((plan,i)=>"<div style='margin-bottom:24px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>Plan "+(i+1)+" - "+new Date(plan.created_at).toLocaleDateString("fr-FR")+" ("+plan.duration+")</div><div style='border:1px solid #E8DDD0;border-top:none;padding:12px 14px;border-radius:0 0 6px 6px'>"+(plan.days||[]).map(day=>"<div style='margin-bottom:10px'><div style='font-weight:600;color:#8B5E3C;font-size:12px;text-transform:uppercase;margin-bottom:4px'>"+day.label+"</div>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:4px 0;border-bottom:1px solid #f5f5f5;font-size:13px'><strong style='color:#8A7968'>"+m.name+" :</strong> "+m.content+"</div>").join("")+"</div>").join("")+(plan.tips?"<div style='background:#f0f7f2;border-left:3px solid #7A9E7E;padding:8px 12px;margin-top:8px;font-size:12px'>Conseils : "+plan.tips+"</div>":"")+"</div></div>").join("");
+    const notesHtml=(notes||[]).map(n=>"<div style='border-left:3px solid #7A9E7E;padding:8px 12px;margin-bottom:8px;background:#f9f9f9'><div style='font-size:11px;color:#8A7968;margin-bottom:4px'>"+new Date(n.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div><div style='font-size:13px'>"+n.text+"</div></div>").join("");
+    win.document.write("<!DOCTYPE html><html><head><title>Dossier - "+p.prenom+" "+p.nom+"</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;color:#3D3228;padding:0 20px}h1{color:#2A2118;font-size:26px;margin-bottom:4px}h2{color:#C4956A;font-size:13px;letter-spacing:2px;text-transform:uppercase;margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid #E8DDD0}.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}.stat{background:#FAF7F2;border:1px solid #E8DDD0;border-radius:8px;padding:12px;text-align:center}.stat-val{font-size:20px;font-weight:600;color:#2A2118}.stat-label{font-size:10px;color:#8A7968;text-transform:uppercase;letter-spacing:1px;margin-top:2px}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#F0EBE1;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:#8A7968}td{padding:8px 12px;border-bottom:1px solid #F0EBE1}@media print{button{display:none}}</style></head><body>"+
+    "<div style='display:flex;justify-content:space-between;align-items:start;margin-bottom:24px'><div><h1>"+p.prenom+" "+p.nom+"</h1><div style='color:#8A7968;font-size:13px;margin-top:4px'>"+getAge(p.ddn)+(p.sexe?" - "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"Autre"):"")+(p.email?" - "+p.email:"")+"</div></div><div style='font-size:11px;color:#8A7968;text-align:right'>SoDiet - Dossier patient<br>"+new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div></div>"+
     "<h2>Donnees morphologiques</h2><div class='grid'><div class='stat'><div class='stat-val'>"+(p.taille||"-")+" cm</div><div class='stat-label'>Taille</div></div><div class='stat'><div class='stat-val'>"+(p.poids||"-")+" kg</div><div class='stat-label'>Poids initial</div></div><div class='stat'><div class='stat-val'>"+(p.poids_obj||"-")+" kg</div><div class='stat-label'>Objectif</div></div><div class='stat'><div class='stat-val'>"+bmi+"</div><div class='stat-label'>IMC</div></div><div class='stat'><div class='stat-val'>"+(ACTIVITE_FR[p.activite]||"-")+"</div><div class='stat-label'>Activite</div></div><div class='stat'><div class='stat-val'>"+(poidsData||[]).length+"</div><div class='stat-label'>Mesures poids</div></div></div>"+
     (p.allergies?"<div style='background:#fff8f5;border:1px solid #f5c0b8;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px'><strong>Allergies :</strong> "+p.allergies+"</div>":"")+
     (p.antecedents?"<div style='background:#f5f8ff;border:1px solid #c0c8f5;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px'><strong>Antecedents :</strong> "+p.antecedents+"</div>":"")+
@@ -637,6 +608,13 @@ const exportPatientPDF = (p, plans, notes, poidsData) => {
     "<br/><button onclick='window.print()' style='padding:10px 24px;background:#C4956A;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px'>Imprimer / Exporter en PDF</button></body></html>");
     win.document.close();
   };
+
+  const handleShare = (result) => {
+    const lines=(result.days||[]).flatMap(day=>["\n== "+day.label+" ==",...(day.meals||[]).filter(m=>m.content).map(m=>m.name+" : "+m.content)]);
+    if(result.tips)lines.push("\nConseils : "+result.tips);
+    window.location.href="mailto:"+(currentPatient?.email||"")+"?subject=Plan alimentaire SoDiet&body="+encodeURIComponent("Plan alimentaire - "+(currentPatient?.prenom)+" "+(currentPatient?.nom)+"\n"+lines.join("\n"));
+  };
+
   const handlePrint = (result) => {
     const win=window.open("","_blank");
     const daysHtml=(result.days||[]).map(day=>"<div style='margin-bottom:18px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>"+day.label+"</div><div style='border:1px solid #E8DDD0;border-top:none;border-radius:0 0 6px 6px;padding:10px 14px'>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:6px 0;border-bottom:1px solid #f0ebe1'><strong style='color:#8A7968'>"+m.name+" :</strong> "+m.content+"</div>").join("")+"</div></div>").join("");
@@ -645,53 +623,7 @@ const exportPatientPDF = (p, plans, notes, poidsData) => {
   };
 
   const filteredPatients=patients.filter(p=>(p.prenom+" "+p.nom).toLowerCase().includes(search.toLowerCase()));
-const AgendaView = () => {
-    const today = new Date().toISOString().split("T")[0];
-    const upcoming = rdvList.filter(r => r.date >= today);
-    const past = rdvList.filter(r => r.date < today);
-    return (
-      <div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
-          <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Rendez-vous a venir</div>
-          <button style={S.btn("primary")} onClick={()=>setModal("rdv")}>+ Nouveau RDV</button>
-        </div>
-        {loadingRDV?<Spinner/>:upcoming.length===0
-          ?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>📅</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun rendez-vous</div><div style={{fontSize:13}}>Ajoutez votre premier RDV</div></div>
-          :upcoming.map((r,i)=>(
-            <div key={i} style={{...S.infoCard,display:"flex",alignItems:"center",gap:16,padding:"16px 20px"}}>
-              <div style={{background:"#C4956A",color:"white",borderRadius:10,padding:"10px 14px",textAlign:"center",minWidth:56}}>
-                <div style={{fontSize:20,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
-                <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"1px"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
-              </div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:600,color:"#2A2118",fontSize:14}}>{r.patients?.prenom} {r.patients?.nom}</div>
-                <div style={{fontSize:12,color:"#8A7968",marginTop:2}}>{r.heure.slice(0,5)} — {r.duree} min{r.note?" · "+r.note:""}</div>
-              </div>
-              <button onClick={()=>deleteRDV(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:18}}>×</button>
-            </div>
-          ))
-        }
-        {past.length>0&&(
-          <div style={{marginTop:24}}>
-            <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#8A7968",marginBottom:12}}>Passes</div>
-            {past.reverse().map((r,i)=>(
-              <div key={i} style={{...S.infoCard,display:"flex",alignItems:"center",gap:16,padding:"12px 20px",opacity:0.6}}>
-                <div style={{background:"#8A7968",color:"white",borderRadius:10,padding:"8px 12px",textAlign:"center",minWidth:48}}>
-                  <div style={{fontSize:16,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
-                  <div style={{fontSize:9,textTransform:"uppercase"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:600,color:"#2A2118",fontSize:13}}>{r.patients?.prenom} {r.patients?.nom}</div>
-                  <div style={{fontSize:12,color:"#8A7968",marginTop:2}}>{r.heure.slice(0,5)} — {r.duree} min</div>
-                </div>
-                <button onClick={()=>deleteRDV(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:18}}>×</button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
+
   if(!session) return <LoginPage onLogin={handleLogin} error={authError} loading={authLoading}/>;
 
   return (
@@ -707,7 +639,7 @@ const AgendaView = () => {
           <div style={S.navLabel}>Menu</div>
           <div style={S.navItem(panel==="dashboard")} onClick={()=>setPanel("dashboard")}><span>⊞</span>Tableau de bord</div>
           <div style={S.navItem(panel==="patients"||panel==="profile")} onClick={()=>setPanel("patients")}><span>👥</span>Mes patients</div>
-  <div style={S.navItem(panel==="agenda")} onClick={()=>setPanel("agenda")}><span>📅</span>Agenda</div>
+          <div style={S.navItem(panel==="agenda")} onClick={()=>setPanel("agenda")}><span>📅</span>Agenda</div>
           {patients.length>0&&<>
             <div style={{...S.navLabel,marginTop:16}}>Patients recents</div>
             {patients.slice(0,8).map(p=>(
@@ -726,7 +658,7 @@ const AgendaView = () => {
       <main style={S.main}>
         <div style={S.topbar}>
           <div style={S.pageTitle}>
-            {panel==="dashboard"?"Tableau de bord":panel==="patients"?"Mes patients":currentPatient?(currentPatient.prenom+" "+currentPatient.nom):"Patients"}
+            {panel==="dashboard"?"Tableau de bord":panel==="patients"?"Mes patients":panel==="agenda"?"Agenda":currentPatient?(currentPatient.prenom+" "+currentPatient.nom):"Patients"}
           </div>
           <button style={S.btn("primary")} onClick={()=>{setForm(EMPTY_FORM);setEditId(null);setModal("patient");}}>+ Nouveau patient</button>
         </div>
@@ -735,7 +667,7 @@ const AgendaView = () => {
           {panel==="dashboard"&&(
             <div>
               <div style={S.statsGrid}>
-                {[["Total patients",patients.length,"dans votre cabinet"],["Perte de poids",patients.filter(p=>p.objectif==="perte_poids").length,"objectif principal"],["Reeducation",patients.filter(p=>p.objectif==="reeducation").length,"reapprendre a manger"],["Plans crees",totalPlans,"cette session"]].map(([l,v,s])=>(
+                {[["Total patients",patients.length,"dans votre cabinet"],["Perte de poids",patients.filter(p=>p.objectif==="perte_poids").length,"objectif principal"],["RDV a venir",rdvList.filter(r=>r.date>=new Date().toISOString().split("T")[0]).length,"rendez-vous planifies"],["Plans crees",totalPlans,"cette session"]].map(([l,v,s])=>(
                   <div key={l} style={S.statCard}>
                     <div style={S.statLabel}>{l}</div>
                     <div style={S.statValue}>{v}</div>
@@ -743,19 +675,42 @@ const AgendaView = () => {
                   </div>
                 ))}
               </div>
-              <div style={{...S.infoCard,padding:28}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-                  <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Patients recents</div>
-                  <button style={{...S.btn("secondary"),fontSize:12}} onClick={()=>setPanel("patients")}>Voir tous</button>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:22}}>
+                <div style={{...S.infoCard,padding:28}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+                    <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Patients recents</div>
+                    <button style={{...S.btn("secondary"),fontSize:12}} onClick={()=>setPanel("patients")}>Voir tous</button>
+                  </div>
+                  {loadingPatients?<Spinner/>:patients.length===0
+                    ?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>🌿</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun patient</div><div style={{fontSize:13}}>Ajoutez votre premier patient</div></div>
+                    :<div style={S.patientsGrid}>{patients.slice(0,4).map(p=><PatientCard key={p.id} p={p} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}/>)}</div>
+                  }
                 </div>
-                {loadingPatients?<Spinner/>:patients.length===0
-                  ?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>🌿</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun patient</div><div style={{fontSize:13}}>Ajoutez votre premier patient</div></div>
-                  :<div style={S.patientsGrid}>{patients.slice(0,4).map(p=><PatientCard key={p.id} p={p} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}/>)}</div>
-                }
+                <div style={{...S.infoCard,padding:22}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                    <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#2A2118"}}>Prochains RDV</div>
+                    <button style={{...S.btn("secondary"),fontSize:11,padding:"5px 10px"}} onClick={()=>setPanel("agenda")}>Voir tous</button>
+                  </div>
+                  {loadingRDV?<Spinner/>:rdvList.filter(r=>r.date>=new Date().toISOString().split("T")[0]).slice(0,5).length===0
+                    ?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucun RDV a venir</p>
+                    :rdvList.filter(r=>r.date>=new Date().toISOString().split("T")[0]).slice(0,5).map((r,i)=>(
+                      <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:"1px solid #F0EBE1"}}>
+                        <div style={{background:"#C4956A",color:"white",borderRadius:8,padding:"6px 10px",textAlign:"center",minWidth:44,flexShrink:0}}>
+                          <div style={{fontSize:16,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
+                          <div style={{fontSize:9,textTransform:"uppercase"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
+                        </div>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:600,color:"#2A2118"}}>{r.patients?.prenom} {r.patients?.nom}</div>
+                          <div style={{fontSize:11,color:"#8A7968"}}>{r.heure.slice(0,5)} — {r.duree} min</div>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
               </div>
             </div>
           )}
-{panel==="agenda"&&<AgendaView/>}
+
           {panel==="patients"&&(
             <div>
               <div style={{position:"relative",marginBottom:24}}>
@@ -769,15 +724,17 @@ const AgendaView = () => {
             </div>
           )}
 
+          {panel==="agenda"&&<AgendaView rdvList={rdvList} loadingRDV={loadingRDV} patients={patients} onAddRDV={()=>setModal("rdv")} onDeleteRDV={deleteRDV}/>}
+
           {panel==="profile"&&currentPatient&&(
-<ProfileView p={currentPatient} plans={profilePlans} notes={profileNotes} token={token} poidsData={profilePoids} loading={profileLoading}
-  onBack={()=>setPanel("patients")}
-  onEdit={()=>{setForm({...EMPTY_FORM,...currentPatient,poids_obj:currentPatient.poids_obj||""});setEditId(currentPatient.id);setModal("patient");}}
-  onDelete={()=>deletePatient(currentPatient.id)}
-  onGenPlan={()=>{setPlanMode("choice");setPlanState("idle");setPlanResult(null);setModal("plan");}}
-  onAddNote={()=>setModal("note")}
-  onExportPDF={()=>exportPatientPDF(currentPatient, profilePlans, profileNotes, profilePoids)}
-/>
+            <ProfileView p={currentPatient} plans={profilePlans} notes={profileNotes} token={token} loading={profileLoading}
+              onBack={()=>setPanel("patients")}
+              onEdit={()=>{setForm({...EMPTY_FORM,...currentPatient,poids_obj:currentPatient.poids_obj||""});setEditId(currentPatient.id);setModal("patient");}}
+              onDelete={()=>deletePatient(currentPatient.id)}
+              onGenPlan={()=>{setPlanMode("choice");setPlanState("idle");setPlanResult(null);setModal("plan");}}
+              onAddNote={()=>setModal("note")}
+              onExportPDF={()=>exportPatientPDF(currentPatient,profilePlans,profileNotes,profilePoids)}
+            />
           )}
         </div>
       </main>
@@ -814,12 +771,10 @@ const AgendaView = () => {
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
                 {Object.entries(DIET_FR).map(([v,l])=>{
                   const checked=(form.diets||[]).includes(v);
-                  return(
-                    <label key={v} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",border:"1.5px solid "+(checked?"#C4956A":"#E8DDD0"),borderRadius:8,cursor:"pointer",fontSize:12,background:checked?"rgba(196,149,106,0.1)":"white",color:checked?"#8B5E3C":"#3D3228"}}>
-                      <input type="checkbox" style={{display:"none"}} checked={checked} onChange={e=>setForm(f=>({...f,diets:e.target.checked?[...(f.diets||[]),v]:(f.diets||[]).filter(d=>d!==v)}))}/>
-                      {l}
-                    </label>
-                  );
+                  return(<label key={v} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",border:"1.5px solid "+(checked?"#C4956A":"#E8DDD0"),borderRadius:8,cursor:"pointer",fontSize:12,background:checked?"rgba(196,149,106,0.1)":"white",color:checked?"#8B5E3C":"#3D3228"}}>
+                    <input type="checkbox" style={{display:"none"}} checked={checked} onChange={e=>setForm(f=>({...f,diets:e.target.checked?[...(f.diets||[]),v]:(f.diets||[]).filter(d=>d!==v)}))}/>
+                    {l}
+                  </label>);
                 })}
               </div>
               <SectionTitle>Informations medicales</SectionTitle>
@@ -830,6 +785,41 @@ const AgendaView = () => {
             <div style={S.modalFooter}>
               <button style={S.btn("secondary")} onClick={closeModal}>Annuler</button>
               <button style={S.btn("primary")} onClick={savePatient} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal==="rdv"&&(
+        <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
+          <div style={{...S.modal,maxWidth:480}}>
+            <div style={S.modalHeader}>
+              <div style={S.modalTitle}>Nouveau rendez-vous</div>
+              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
+            </div>
+            <div style={S.modalBody}>
+              <div style={S.formGroup}>
+                <label style={S.label}>Patient *</label>
+                <select style={S.input} value={rdvForm.patient_id} onChange={e=>setRdvForm(f=>({...f,patient_id:e.target.value}))}>
+                  <option value="">Selectionnez un patient</option>
+                  {patients.map(p=><option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}
+                </select>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <FormInput label="Date *" type="date" value={rdvForm.date} onChange={v=>setRdvForm(f=>({...f,date:v}))}/>
+                <FormInput label="Heure *" type="time" value={rdvForm.heure} onChange={v=>setRdvForm(f=>({...f,heure:v}))}/>
+              </div>
+              <div style={S.formGroup}>
+                <label style={S.label}>Duree (minutes)</label>
+                <select style={S.input} value={rdvForm.duree} onChange={e=>setRdvForm(f=>({...f,duree:+e.target.value}))}>
+                  {[30,45,60,90,120].map(d=><option key={d} value={d}>{d} min</option>)}
+                </select>
+              </div>
+              <div style={S.formGroup}><label style={S.label}>Note (optionnel)</label><textarea style={{...S.textarea,minHeight:80}} value={rdvForm.note} onChange={e=>setRdvForm(f=>({...f,note:e.target.value}))} placeholder="Ex: premiere consultation, suivi mensuel..."/></div>
+            </div>
+            <div style={S.modalFooter}>
+              <button style={S.btn("secondary")} onClick={closeModal}>Annuler</button>
+              <button style={S.btn("primary")} onClick={saveRDV} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
             </div>
           </div>
         </div>
@@ -876,10 +866,7 @@ const AgendaView = () => {
               {planMode==="ai"&&planState==="idle"&&(
                 <div>
                   <p style={{fontSize:13,color:"#8A7968",marginBottom:16}}>Plan IA - {planDuration==="7j"?"7 jours":"3 jours"}</p>
-                  <div style={S.formGroup}>
-                    <label style={S.label}>Instructions speciales (optionnel)</label>
-                    <textarea style={S.textarea} value={planInstr} onChange={e=>setPlanInstr(e.target.value)} placeholder="Ex: repas rapides, budget limite..."/>
-                  </div>
+                  <div style={S.formGroup}><label style={S.label}>Instructions speciales (optionnel)</label><textarea style={S.textarea} value={planInstr} onChange={e=>setPlanInstr(e.target.value)} placeholder="Ex: repas rapides, budget limite..."/></div>
                 </div>
               )}
               {planMode==="ai"&&planState==="loading"&&(
@@ -916,43 +903,7 @@ const AgendaView = () => {
           </div>
         </div>
       )}
-{modal==="rdv"&&(
-        <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
-          <div style={{...S.modal,maxWidth:480}}>
-            <div style={S.modalHeader}>
-              <div style={S.modalTitle}>Nouveau rendez-vous</div>
-              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
-            </div>
-            <div style={S.modalBody}>
-              <div style={S.formGroup}>
-                <label style={S.label}>Patient *</label>
-                <select style={S.input} value={rdvForm.patient_id} onChange={e=>setRdvForm(f=>({...f,patient_id:e.target.value}))}>
-                  <option value="">Selectionnez un patient</option>
-                  {patients.map(p=><option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}
-                </select>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <FormInput label="Date *" type="date" value={rdvForm.date} onChange={v=>setRdvForm(f=>({...f,date:v}))}/>
-                <FormInput label="Heure *" type="time" value={rdvForm.heure} onChange={v=>setRdvForm(f=>({...f,heure:v}))}/>
-              </div>
-              <div style={S.formGroup}>
-                <label style={S.label}>Duree (minutes)</label>
-                <select style={S.input} value={rdvForm.duree} onChange={e=>setRdvForm(f=>({...f,duree:+e.target.value}))}>
-                  {[30,45,60,90,120].map(d=><option key={d} value={d}>{d} min</option>)}
-                </select>
-              </div>
-              <div style={S.formGroup}>
-                <label style={S.label}>Note (optionnel)</label>
-                <textarea style={{...S.textarea,minHeight:80}} value={rdvForm.note} onChange={e=>setRdvForm(f=>({...f,note:e.target.value}))} placeholder="Ex: premiere consultation, suivi mensuel..."/>
-              </div>
-            </div>
-            <div style={S.modalFooter}>
-              <button style={S.btn("secondary")} onClick={closeModal}>Annuler</button>
-              <button style={S.btn("primary")} onClick={saveRDV} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
-            </div>
-          </div>
-        </div>
-      )}
+
       {modal==="note"&&(
         <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div style={{...S.modal,maxWidth:480}}>
@@ -961,10 +912,7 @@ const AgendaView = () => {
               <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
             </div>
             <div style={S.modalBody}>
-              <div style={S.formGroup}>
-                <label style={S.label}>Note de consultation</label>
-                <textarea style={{...S.textarea,minHeight:120}} value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Observations lors de la consultation..."/>
-              </div>
+              <div style={S.formGroup}><label style={S.label}>Note de consultation</label><textarea style={{...S.textarea,minHeight:120}} value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Observations lors de la consultation..."/></div>
             </div>
             <div style={S.modalFooter}>
               <button style={S.btn("secondary")} onClick={closeModal}>Annuler</button>

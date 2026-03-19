@@ -24,6 +24,8 @@ const db = {
   deletePatient: (id, token) => supaFetch("patients?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
   getPlans: (pid, token) => supaFetch("plans?patient_id=eq." + pid + "&order=created_at.desc", { token }),
   addPlan: (p, token) => supaFetch("plans", { method: "POST", body: p, token }),
+  updatePlan: (id, p, token) => supaFetch("plans?id=eq." + id, { method: "PATCH", body: p, token }),
+  deletePlan: (id, token) => supaFetch("plans?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
   getNotes: (pid, token) => supaFetch("consult_notes?patient_id=eq." + pid + "&order=created_at.desc", { token }),
   addNote: (n, token) => supaFetch("consult_notes", { method: "POST", body: n, token }),
   getPoids: (pid, token) => supaFetch("poids_historique?patient_id=eq." + pid + "&order=date.asc", { token }),
@@ -50,15 +52,15 @@ const avatarColor = (id) => COLORS[Math.abs((id||"").toString().split("").reduce
 const initials = (p) => ((p.prenom||"?")[0]+(p.nom||"?")[0]).toUpperCase();
 const getAge = (ddn) => { if(!ddn) return "-"; const d=Math.floor((Date.now()-new Date(ddn))/(365.25*24*3600*1000)); return d+" ans"; };
 const calcBMI = (p,t) => { if(!p||!t) return "-"; return (p/Math.pow(t/100,2)).toFixed(1); };
-const emptyDay = (i) => ({ label:"Jour "+(i+1), meals:MEAL_NAMES.map(name=>({name,content:""})) });
-const emptyManualPlan = (n) => Array.from({length:n},(_,i)=>emptyDay(i));
 
-const EMPTY_FORM = {
-  prenom:"",nom:"",ddn:"",sexe:"",email:"",tel:"",
-  taille:"",poids:"",poids_obj:"",objectif:"perte_poids",activite:"sedentaire",
-  diets:[],antecedents:"",allergies:"",notes:"",
-  sommeil:"",transit:"",moral:"",alimentation:"",prise_de_sang:""
+const emptyMeal = (name) => ({ name, content:"", grammage:"" });
+const emptyDay = (i) => ({ label: i===0&&i===0 ? "Journee type" : "Jour "+(i+1), meals: MEAL_NAMES.map(emptyMeal) });
+const emptyPlan = (dur) => {
+  const n = dur==="journee" ? 1 : dur==="7j" ? 7 : 3;
+  return Array.from({length:n}, (_,i) => dur==="journee" ? {label:"Journee type", meals:MEAL_NAMES.map(emptyMeal)} : emptyDay(i));
 };
+
+const EMPTY_FORM = { prenom:"",nom:"",ddn:"",sexe:"",email:"",tel:"", taille:"",poids:"",poids_obj:"",objectif:"perte_poids",activite:"sedentaire", diets:[],antecedents:"",allergies:"",notes:"", sommeil:"",transit:"",moral:"",alimentation:"",prise_de_sang:"" };
 const EMPTY_RDV = { patient_id:"", date:"", heure:"08:00", duree:60, note:"" };
 const EMPTY_MENS = { date:new Date().toISOString().split("T")[0], nombril:"", hanche:"", cuisse_d:"", bras_d:"", masse_grasse:"", masse_hydrique:"", masse_musculaire:"", imc:"", note:"" };
 
@@ -125,6 +127,7 @@ function Spinner() {
     </div>
   );
 }
+
 function PlanDays({days}) {
   return (
     <div>
@@ -134,7 +137,10 @@ function PlanDays({days}) {
           <div style={{padding:"10px 14px"}}>
             {(day.meals||[]).filter(m=>m.content).map((m,j)=>(
               <div key={j} style={{padding:"8px 0",borderBottom:j<(day.meals||[]).filter(x=>x.content).length-1?"1px solid #E8DDD0":"none"}}>
-                <div style={S.planMealName}>{m.name}</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                  <div style={S.planMealName}>{m.name}</div>
+                  {m.grammage&&<span style={{fontSize:11,color:"#C4956A",fontWeight:600}}>{m.grammage}</span>}
+                </div>
                 <div style={S.planMealContent}>{m.content}</div>
               </div>
             ))}
@@ -145,6 +151,117 @@ function PlanDays({days}) {
   );
 }
 
+// ── Plan Editor (manuel + modification) ──────────────────────────────────────
+function PlanEditor({days, tips, onDaysChange, onTipsChange}) {
+  const updateMeal = (di,mi,field,val) => onDaysChange(days.map((d,i)=>i!==di?d:{...d,meals:d.meals.map((m,j)=>j!==mi?m:{...m,[field]:val})}));
+  const updateLabel = (di,val) => onDaysChange(days.map((d,i)=>i===di?{...d,label:val}:d));
+  return (
+    <div style={{maxHeight:"60vh",overflowY:"auto",paddingRight:4}}>
+      {days.map((day,di)=>(
+        <div key={di} style={S.planDayWrap}>
+          <div style={{...S.planDayHeader,padding:"6px 10px"}}>
+            <input value={day.label} onChange={e=>updateLabel(di,e.target.value)} style={{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:6,color:"white",fontWeight:600,fontSize:13,padding:"3px 8px",fontFamily:"'DM Sans',sans-serif",width:"100%",outline:"none"}}/>
+          </div>
+          <div style={{padding:"10px 14px"}}>
+            {day.meals.map((m,mi)=>(
+              <div key={mi} style={{marginBottom:12,paddingBottom:12,borderBottom:mi<day.meals.length-1?"1px solid #E8DDD0":"none"}}>
+                <div style={S.planMealName}>{m.name}</div>
+                <textarea value={m.content} onChange={e=>updateMeal(di,mi,"content",e.target.value)}
+                  placeholder={mi===0?"Ex: Yaourt nature, granola, fruits rouges":mi===1?"Ex: Poulet grille 150g, riz complet 80g, salade verte":mi===2?"Ex: Pomme, 30g amandes":"Ex: Saumon vapeur 180g, haricots verts 200g, quinoa 60g"}
+                  style={{...S.textarea,minHeight:50,width:"100%",fontSize:12,marginBottom:6}}/>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:11,color:"#8A7968",flexShrink:0}}>Grammage / quantite :</span>
+                  <input value={m.grammage||""} onChange={e=>updateMeal(di,mi,"grammage",e.target.value)}
+                    placeholder="Ex: 150g proteines, 80g glucides... ou portion type"
+                    style={{...S.input,fontSize:11,padding:"5px 10px",flex:1}}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div style={S.formGroup}>
+        <label style={S.label}>Conseils (optionnel)</label>
+        <textarea style={{...S.textarea,minHeight:55}} value={tips} onChange={e=>onTipsChange(e.target.value)} placeholder="Ex: bien s'hydrater, manger lentement..."/>
+      </div>
+    </div>
+  );
+}
+
+// ── Plans section in profile ──────────────────────────────────────────────────
+function PlansSection({plans, loading, token, onNewPlan, onPlansChange}) {
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [editDays, setEditDays] = useState([]);
+  const [editTips, setEditTips] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = (plan) => {
+    setEditingPlan(plan);
+    setEditDays(JSON.parse(JSON.stringify(plan.days||[])));
+    setEditTips(plan.tips||"");
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      await db.updatePlan(editingPlan.id, {days:editDays, tips:editTips}, token);
+      onPlansChange(plans.map(p=>p.id===editingPlan.id?{...p,days:editDays,tips:editTips}:p));
+      setEditingPlan(null);
+    } catch(e){alert("Erreur : "+e.message);}
+    setSaving(false);
+  };
+
+  const deletePlan = async (id) => {
+    if(!confirm("Supprimer ce plan ?")) return;
+    await db.deletePlan(id, token);
+    onPlansChange(plans.filter(p=>p.id!==id));
+  };
+
+  if(editingPlan) return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{fontFamily:"Georgia,serif",fontSize:16,color:"#2A2118"}}>Modification du plan</div>
+        <button onClick={()=>setEditingPlan(null)} style={{...S.btn("secondary"),fontSize:12}}>← Retour</button>
+      </div>
+      <PlanEditor days={editDays} tips={editTips} onDaysChange={setEditDays} onTipsChange={setEditTips}/>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:12}}>
+        <button style={S.btn("secondary")} onClick={()=>setEditingPlan(null)}>Annuler</button>
+        <button style={S.btn("primary")} onClick={saveEdit} disabled={saving}>{saving?"Enregistrement...":"Enregistrer les modifications"}</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={S.infoTitle}>Plans alimentaires</div>
+        <button style={S.btn("forest")} onClick={onNewPlan}>+ Nouveau plan</button>
+      </div>
+      {loading?<Spinner/>:plans.length===0
+        ?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucun plan. Cliquez sur "Nouveau plan".</p>
+        :plans.map((plan,i)=>(
+          <div key={i} style={{background:"#F0EBE1",borderRadius:12,marginBottom:14,overflow:"hidden"}}>
+            <div style={{background:plan.mode==="manual"?"#3D5A47":"#C4956A",color:"white",padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:13,fontWeight:600}}>Plan {i+1} - {new Date(plan.created_at).toLocaleDateString("fr-FR")}</span>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <span style={{fontSize:10,background:"rgba(255,255,255,0.2)",padding:"2px 8px",borderRadius:20}}>{plan.duration}</span>
+                <span style={{fontSize:10,background:"rgba(255,255,255,0.15)",padding:"2px 8px",borderRadius:20}}>{plan.mode==="manual"?"Manuel":"IA"}</span>
+                <button onClick={()=>startEdit(plan)} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:"white",fontSize:11,padding:"3px 8px",cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Modifier</button>
+                <button onClick={()=>deletePlan(plan.id)} style={{background:"rgba(255,255,255,0.1)",border:"none",borderRadius:6,color:"rgba(255,255,255,0.7)",fontSize:14,padding:"2px 6px",cursor:"pointer"}}>x</button>
+              </div>
+            </div>
+            <div style={{padding:"12px 14px"}}>
+              <PlanDays days={plan.days}/>
+              {plan.tips&&<div style={{marginTop:10,padding:"9px 12px",background:"rgba(61,90,71,0.08)",borderRadius:8,fontSize:12,color:"#3D5A47",lineHeight:1.5}}>Conseils : {plan.tips}</div>}
+            </div>
+          </div>
+        ))
+      }
+    </div>
+  );
+}
+
+// ── Weight Chart ──────────────────────────────────────────────────────────────
 function PoidsChart({data, objectif}) {
   if(!data||data.length===0) return <p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune mesure. Ajoutez une mesure pour voir la courbe.</p>;
   const W=580,H=200,PL=45,PR=20,PT=20,PB=35;
@@ -178,63 +295,31 @@ function PoidsSection({patientId, objectif, token}) {
   const [newDate, setNewDate] = useState(new Date().toISOString().split("T")[0]);
   const [newNote, setNewNote] = useState("");
   const [saving, setSaving] = useState(false);
-
   useEffect(()=>{ db.getPoids(patientId,token).then(d=>{setPoidsData(d||[]);setLoading(false);}).catch(()=>setLoading(false)); },[patientId]);
-
   const addMesure = async () => {
-    if(!newPoids) return;
-    setSaving(true);
-    try {
-      const [entry]=await db.addPoids({patient_id:patientId,poids:+newPoids,date:newDate,note:newNote||null},token);
-      setPoidsData(d=>[...d,entry].sort((a,b)=>new Date(a.date)-new Date(b.date)));
-      setNewPoids(""); setNewNote("");
-    } catch(e){alert("Erreur : "+e.message);}
+    if(!newPoids) return; setSaving(true);
+    try { const [e]=await db.addPoids({patient_id:patientId,poids:+newPoids,date:newDate,note:newNote||null},token); setPoidsData(d=>[...d,e].sort((a,b)=>new Date(a.date)-new Date(b.date))); setNewPoids(""); setNewNote(""); } catch(e){alert("Erreur : "+e.message);}
     setSaving(false);
   };
-
   const deleteMesure = async (id) => { await db.deletePoids(id,token); setPoidsData(d=>d.filter(x=>x.id!==id)); };
   const poidsDiff = poidsData.length>=2?(poidsData[poidsData.length-1].poids-poidsData[0].poids).toFixed(1):null;
-
   return (
     <div style={S.infoCard}>
       <div style={S.infoTitle}>Suivi du poids</div>
       {loading?<Spinner/>:(
         <>
-          {poidsData.length>=2&&(
-            <div style={{display:"flex",gap:12,marginBottom:16}}>
-              {[["Debut",poidsData[0].poids+"kg"],["Actuel",poidsData[poidsData.length-1].poids+"kg"],["Evolution",(poidsDiff>0?"+":"")+poidsDiff+"kg"],["Objectif",objectif?objectif+"kg":"-"]].map(([k,v])=>(
-                <div key={k} style={{flex:1,background:"#F0EBE1",borderRadius:10,padding:"10px 14px",textAlign:"center"}}>
-                  <div style={{fontSize:14,fontWeight:600,color:k==="Evolution"?(poidsDiff<=0?"#3D5A47":"#c8503c"):"#2A2118"}}>{v}</div>
-                  <div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:2}}>{k}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          {poidsData.length>=2&&(<div style={{display:"flex",gap:12,marginBottom:16}}>{[["Debut",poidsData[0].poids+"kg"],["Actuel",poidsData[poidsData.length-1].poids+"kg"],["Evolution",(poidsDiff>0?"+":"")+poidsDiff+"kg"],["Objectif",objectif?objectif+"kg":"-"]].map(([k,v])=>(<div key={k} style={{flex:1,background:"#F0EBE1",borderRadius:10,padding:"10px 14px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:600,color:k==="Evolution"?(poidsDiff<=0?"#3D5A47":"#c8503c"):"#2A2118"}}>{v}</div><div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:2}}>{k}</div></div>))}</div>)}
           <div style={{marginBottom:16,background:"#FDFAF7",borderRadius:10,padding:12}}><PoidsChart data={poidsData} objectif={objectif}/></div>
           <div style={{borderTop:"1px solid #F0EBE1",paddingTop:14,marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>Ajouter une mesure</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr auto",gap:8,alignItems:"end"}}>
               <div style={S.formGroup}><label style={S.label}>Poids (kg)</label><input type="number" step="0.1" value={newPoids} onChange={e=>setNewPoids(e.target.value)} placeholder="72.5" style={S.input}/></div>
               <div style={S.formGroup}><label style={S.label}>Date</label><input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={S.input}/></div>
-              <div style={S.formGroup}><label style={S.label}>Note (optionnel)</label><input type="text" value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Ex: apres sport..." style={S.input}/></div>
+              <div style={S.formGroup}><label style={S.label}>Note</label><input type="text" value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Ex: apres sport..." style={S.input}/></div>
               <button onClick={addMesure} disabled={saving||!newPoids} style={{...S.btn("primary"),marginBottom:14}}>{saving?"...":"+ Ajouter"}</button>
             </div>
           </div>
-          {poidsData.length>0&&(
-            <div>
-              <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Historique</div>
-              <div style={{maxHeight:160,overflowY:"auto"}}>
-                {[...poidsData].reverse().map((d,i)=>(
-                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #F0EBE1",fontSize:13}}>
-                    <span style={{color:"#8A7968"}}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</span>
-                    <span style={{fontWeight:600}}>{d.poids} kg</span>
-                    {d.note&&<span style={{fontSize:11,color:"#8A7968",fontStyle:"italic"}}>{d.note}</span>}
-                    <button onClick={()=>deleteMesure(d.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:16,padding:"0 4px"}}>x</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {poidsData.length>0&&(<div><div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Historique</div><div style={{maxHeight:160,overflowY:"auto"}}>{[...poidsData].reverse().map((d,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #F0EBE1",fontSize:13}}><span style={{color:"#8A7968"}}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</span><span style={{fontWeight:600}}>{d.poids} kg</span>{d.note&&<span style={{fontSize:11,color:"#8A7968",fontStyle:"italic"}}>{d.note}</span>}<button onClick={()=>deleteMesure(d.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:16,padding:"0 4px"}}>x</button></div>))}</div></div>)}
         </>
       )}
     </div>
@@ -247,38 +332,20 @@ function MensurationsSection({patientId, token}) {
   const [form, setForm] = useState(EMPTY_MENS);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
-
   useEffect(()=>{ db.getMensurations(patientId,token).then(d=>{setData(d||[]);setLoading(false);}).catch(()=>setLoading(false)); },[patientId]);
-
-  const ff = (k) => (v) => setForm(f=>({...f,[k]:v}));
-
+  const ff=(k)=>(v)=>setForm(f=>({...f,[k]:v}));
   const addMens = async () => {
-    if(!form.date){alert("Date requise");return;}
-    setSaving(true);
+    if(!form.date){alert("Date requise");return;} setSaving(true);
     try {
-      const payload={patient_id:patientId,date:form.date,note:form.note||null,
-        nombril:form.nombril?+form.nombril:null,hanche:form.hanche?+form.hanche:null,
-        cuisse_d:form.cuisse_d?+form.cuisse_d:null,bras_d:form.bras_d?+form.bras_d:null,
-        masse_grasse:form.masse_grasse?+form.masse_grasse:null,masse_hydrique:form.masse_hydrique?+form.masse_hydrique:null,
-        masse_musculaire:form.masse_musculaire?+form.masse_musculaire:null,imc:form.imc?+form.imc:null};
+      const payload={patient_id:patientId,date:form.date,note:form.note||null,nombril:form.nombril?+form.nombril:null,hanche:form.hanche?+form.hanche:null,cuisse_d:form.cuisse_d?+form.cuisse_d:null,bras_d:form.bras_d?+form.bras_d:null,masse_grasse:form.masse_grasse?+form.masse_grasse:null,masse_hydrique:form.masse_hydrique?+form.masse_hydrique:null,masse_musculaire:form.masse_musculaire?+form.masse_musculaire:null,imc:form.imc?+form.imc:null};
       const [entry]=await db.addMensuration(payload,token);
       setData(d=>[...d,entry].sort((a,b)=>new Date(a.date)-new Date(b.date)));
       setForm(EMPTY_MENS); setShowForm(false);
     }catch(e){alert("Erreur : "+e.message);}
     setSaving(false);
   };
-
   const deleteMens = async (id) => { await db.deleteMensuration(id,token); setData(d=>d.filter(x=>x.id!==id)); };
-
-  const last = data.length>0?data[data.length-1]:null;
-  const prev = data.length>1?data[data.length-2]:null;
-
-  const diff = (key) => {
-    if(!last||!prev||!last[key]||!prev[key]) return null;
-    const d=(last[key]-prev[key]).toFixed(1);
-    return (d>0?"+":"")+d;
-  };
-
+  const last=data.length>0?data[data.length-1]:null;
   return (
     <div style={S.infoCard}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
@@ -287,73 +354,35 @@ function MensurationsSection({patientId, token}) {
       </div>
       {loading?<Spinner/>:(
         <>
-          {last&&(
-            <div style={{marginBottom:16}}>
-              <div style={{fontSize:11,color:"#8A7968",marginBottom:10}}>Derniere mesure : {new Date(last.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
-                {[["Nombril",last.nombril,"cm"],["Hanche",last.hanche,"cm"],["Cuisse D",last.cuisse_d,"cm"],["Bras D",last.bras_d,"cm"]].map(([k,v,u])=>(
-                  <div key={k} style={{background:"#F0EBE1",borderRadius:10,padding:"10px",textAlign:"center"}}>
-                    <div style={{fontSize:15,fontWeight:600,color:"#2A2118"}}>{v?v+u:"-"}</div>
-                    <div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.5px",marginTop:2}}>{k}</div>
-                    {diff(k.toLowerCase().replace(" ","_"))&&<div style={{fontSize:10,color:diff(k.toLowerCase().replace(" ","_"))<=0?"#3D5A47":"#c8503c",marginTop:2}}>{diff(k.toLowerCase().replace(" ","_"))}</div>}
-                  </div>
-                ))}
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                {[["Masse grasse",last.masse_grasse,"%"],["Masse hydrique",last.masse_hydrique,"%"],["Masse musculaire",last.masse_musculaire,"%"],["IMC",last.imc,""]].map(([k,v,u])=>(
-                  <div key={k} style={{background:"#F0EBE1",borderRadius:10,padding:"10px",textAlign:"center"}}>
-                    <div style={{fontSize:15,fontWeight:600,color:"#2A2118"}}>{v?(v+u):"-"}</div>
-                    <div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.5px",marginTop:2}}>{k}</div>
-                  </div>
-                ))}
-              </div>
+          {last&&(<div style={{marginBottom:16}}>
+            <div style={{fontSize:11,color:"#8A7968",marginBottom:10}}>Derniere mesure : {new Date(last.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
+              {[["Nombril",last.nombril,"cm"],["Hanche",last.hanche,"cm"],["Cuisse D",last.cuisse_d,"cm"],["Bras D",last.bras_d,"cm"]].map(([k,v,u])=>(<div key={k} style={{background:"#F0EBE1",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:15,fontWeight:600,color:"#2A2118"}}>{v?v+u:"-"}</div><div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.5px",marginTop:2}}>{k}</div></div>))}
             </div>
-          )}
-
-          {showForm&&(
-            <div style={{background:"#F0EBE1",borderRadius:12,padding:16,marginBottom:16}}>
-              <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:12}}>Nouvelle mesure</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-                <div style={S.formGroup}><label style={S.label}>Date *</label><input type="date" value={form.date} onChange={e=>ff("date")(e.target.value)} style={S.input}/></div>
-                <div style={S.formGroup}><label style={S.label}>Note</label><input type="text" value={form.note} onChange={e=>ff("note")(e.target.value)} placeholder="Ex: apres sport..." style={S.input}/></div>
-              </div>
-              <div style={{fontSize:11,fontWeight:600,color:"#3D5A47",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Mensurations (cm)</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
-                {[["Nombril","nombril"],["Hanche","hanche"],["Cuisse D","cuisse_d"],["Bras D","bras_d"]].map(([l,k])=>(
-                  <div key={k} style={S.formGroup}><label style={S.label}>{l}</label><input type="number" step="0.1" value={form[k]} onChange={e=>ff(k)(e.target.value)} placeholder="0" style={S.input}/></div>
-                ))}
-              </div>
-              <div style={{fontSize:11,fontWeight:600,color:"#3D5A47",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Composition corporelle</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
-                {[["Masse grasse %","masse_grasse"],["Masse hydrique %","masse_hydrique"],["Masse musculaire %","masse_musculaire"],["IMC","imc"]].map(([l,k])=>(
-                  <div key={k} style={S.formGroup}><label style={S.label}>{l}</label><input type="number" step="0.1" value={form[k]} onChange={e=>ff(k)(e.target.value)} placeholder="0" style={S.input}/></div>
-                ))}
-              </div>
-              <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
-                <button style={S.btn("secondary")} onClick={()=>setShowForm(false)}>Annuler</button>
-                <button style={S.btn("primary")} onClick={addMens} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
-              </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+              {[["Masse grasse",last.masse_grasse,"%"],["Masse hydrique",last.masse_hydrique,"%"],["Masse musculaire",last.masse_musculaire,"%"],["IMC",last.imc,""]].map(([k,v,u])=>(<div key={k} style={{background:"#F0EBE1",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:15,fontWeight:600,color:"#2A2118"}}>{v?(v+u):"-"}</div><div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.5px",marginTop:2}}>{k}</div></div>))}
             </div>
-          )}
-
-          {data.length>0&&(
-            <div>
-              <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Historique</div>
-              <div style={{maxHeight:200,overflowY:"auto"}}>
-                {[...data].reverse().map((d,i)=>(
-                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #F0EBE1",fontSize:12}}>
-                    <span style={{color:"#8A7968",minWidth:100}}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"})}</span>
-                    <div style={{display:"flex",gap:12,flex:1,flexWrap:"wrap"}}>
-                      {[["Nombril",d.nombril,"cm"],["Hanche",d.hanche,"cm"],["Cuisse",d.cuisse_d,"cm"],["Bras",d.bras_d,"cm"],["MG",d.masse_grasse,"%"],["MH",d.masse_hydrique,"%"],["MM",d.masse_musculaire,"%"],["IMC",d.imc,""]].filter(([,v])=>v).map(([k,v,u])=>(
-                        <span key={k} style={{color:"#3D3228"}}><span style={{color:"#8A7968"}}>{k}:</span> {v}{u}</span>
-                      ))}
-                    </div>
-                    <button onClick={()=>deleteMens(d.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:16,padding:"0 4px",flexShrink:0}}>x</button>
-                  </div>
-                ))}
-              </div>
+          </div>)}
+          {showForm&&(<div style={{background:"#F0EBE1",borderRadius:12,padding:16,marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:12}}>Nouvelle mesure</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+              <div style={S.formGroup}><label style={S.label}>Date *</label><input type="date" value={form.date} onChange={e=>ff("date")(e.target.value)} style={S.input}/></div>
+              <div style={S.formGroup}><label style={S.label}>Note</label><input type="text" value={form.note} onChange={e=>ff("note")(e.target.value)} placeholder="Ex: apres sport..." style={S.input}/></div>
             </div>
-          )}
+            <div style={{fontSize:11,fontWeight:600,color:"#3D5A47",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Mensurations (cm)</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+              {[["Nombril","nombril"],["Hanche","hanche"],["Cuisse D","cuisse_d"],["Bras D","bras_d"]].map(([l,k])=>(<div key={k} style={S.formGroup}><label style={S.label}>{l}</label><input type="number" step="0.1" value={form[k]} onChange={e=>ff(k)(e.target.value)} placeholder="0" style={S.input}/></div>))}
+            </div>
+            <div style={{fontSize:11,fontWeight:600,color:"#3D5A47",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Composition corporelle</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+              {[["Masse grasse %","masse_grasse"],["Masse hydrique %","masse_hydrique"],["Masse musculaire %","masse_musculaire"],["IMC","imc"]].map(([l,k])=>(<div key={k} style={S.formGroup}><label style={S.label}>{l}</label><input type="number" step="0.1" value={form[k]} onChange={e=>ff(k)(e.target.value)} placeholder="0" style={S.input}/></div>))}
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button style={S.btn("secondary")} onClick={()=>setShowForm(false)}>Annuler</button>
+              <button style={S.btn("primary")} onClick={addMens} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
+            </div>
+          </div>)}
+          {data.length>0&&(<div><div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Historique</div><div style={{maxHeight:200,overflowY:"auto"}}>{[...data].reverse().map((d,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #F0EBE1",fontSize:12}}><span style={{color:"#8A7968",minWidth:100}}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"})}</span><div style={{display:"flex",gap:12,flex:1,flexWrap:"wrap"}}>{[["Nombril",d.nombril,"cm"],["Hanche",d.hanche,"cm"],["Cuisse",d.cuisse_d,"cm"],["Bras",d.bras_d,"cm"],["MG",d.masse_grasse,"%"],["MH",d.masse_hydrique,"%"],["MM",d.masse_musculaire,"%"],["IMC",d.imc,""]].filter(([,v])=>v).map(([k,v,u])=>(<span key={k}><span style={{color:"#8A7968"}}>{k}:</span> {v}{u}</span>))}</div><button onClick={()=>deleteMens(d.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:16,padding:"0 4px",flexShrink:0}}>x</button></div>))}</div></div>)}
           {data.length===0&&!showForm&&<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune mensuration. Cliquez sur "+ Ajouter".</p>}
         </>
       )}
@@ -365,46 +394,27 @@ function AgendaView({rdvList, loadingRDV, patients, onAddRDV, onDeleteRDV}) {
   const today = new Date().toISOString().split("T")[0];
   const upcoming = rdvList.filter(r=>r.date>=today);
   const past = [...rdvList.filter(r=>r.date<today)].reverse();
+  const RDVCard = ({r, dim}) => (
+    <div style={{...S.infoCard,display:"flex",alignItems:"center",gap:16,padding:"14px 20px",opacity:dim?0.6:1}}>
+      <div style={{background:dim?"#8A7968":"#C4956A",color:"white",borderRadius:10,padding:"8px 12px",textAlign:"center",minWidth:50}}>
+        <div style={{fontSize:18,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
+        <div style={{fontSize:9,textTransform:"uppercase"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
+      </div>
+      <div style={{flex:1}}>
+        <div style={{fontWeight:600,color:"#2A2118",fontSize:14}}>{r.patients?.prenom} {r.patients?.nom}</div>
+        <div style={{fontSize:12,color:"#8A7968",marginTop:2}}>{r.heure.slice(0,5)} — {r.duree} min{r.note?" · "+r.note:""}</div>
+      </div>
+      <button onClick={()=>onDeleteRDV(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:20}}>x</button>
+    </div>
+  );
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
         <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Rendez-vous a venir</div>
         <button style={S.btn("primary")} onClick={onAddRDV}>+ Nouveau RDV</button>
       </div>
-      {loadingRDV?<Spinner/>:upcoming.length===0
-        ?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>📅</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun rendez-vous</div><div style={{fontSize:13}}>Ajoutez votre premier RDV</div></div>
-        :upcoming.map((r,i)=>(
-          <div key={i} style={{...S.infoCard,display:"flex",alignItems:"center",gap:16,padding:"16px 20px"}}>
-            <div style={{background:"#C4956A",color:"white",borderRadius:10,padding:"10px 14px",textAlign:"center",minWidth:56}}>
-              <div style={{fontSize:20,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
-              <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"1px"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
-            </div>
-            <div style={{flex:1}}>
-              <div style={{fontWeight:600,color:"#2A2118",fontSize:14}}>{r.patients?.prenom} {r.patients?.nom}</div>
-              <div style={{fontSize:12,color:"#8A7968",marginTop:2}}>{r.heure.slice(0,5)} — {r.duree} min{r.note?" · "+r.note:""}</div>
-            </div>
-            <button onClick={()=>onDeleteRDV(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:20}}>x</button>
-          </div>
-        ))
-      }
-      {past.length>0&&(
-        <div style={{marginTop:24}}>
-          <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#8A7968",marginBottom:12}}>Passes</div>
-          {past.map((r,i)=>(
-            <div key={i} style={{...S.infoCard,display:"flex",alignItems:"center",gap:16,padding:"12px 20px",opacity:0.6}}>
-              <div style={{background:"#8A7968",color:"white",borderRadius:10,padding:"8px 12px",textAlign:"center",minWidth:48}}>
-                <div style={{fontSize:16,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
-                <div style={{fontSize:9,textTransform:"uppercase"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
-              </div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:600,color:"#2A2118",fontSize:13}}>{r.patients?.prenom} {r.patients?.nom}</div>
-                <div style={{fontSize:12,color:"#8A7968",marginTop:2}}>{r.heure.slice(0,5)} — {r.duree} min</div>
-              </div>
-              <button onClick={()=>onDeleteRDV(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:18}}>x</button>
-            </div>
-          ))}
-        </div>
-      )}
+      {loadingRDV?<Spinner/>:upcoming.length===0?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>📅</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun rendez-vous</div></div>:upcoming.map((r,i)=><RDVCard key={i} r={r}/>)}
+      {past.length>0&&(<div style={{marginTop:24}}><div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#8A7968",marginBottom:12}}>Passes</div>{past.map((r,i)=><RDVCard key={i} r={r} dim/>)}</div>)}
     </div>
   );
 }
@@ -422,9 +432,7 @@ function LoginPage({onLogin, error, loading}) {
         <div style={S.formGroup}><label style={S.label}>Email</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="votre@email.com" style={{...S.input,width:"100%",boxSizing:"border-box"}}/></div>
         <div style={{...S.formGroup,marginBottom:24}}><label style={S.label}>Mot de passe</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" style={{...S.input,width:"100%",boxSizing:"border-box"}}/></div>
         {error&&<div style={{background:"#fff0ee",border:"1px solid #f5c0b8",borderRadius:8,padding:"10px 14px",fontSize:12,color:"#c8503c",marginBottom:16}}>{error}</div>}
-        <button onClick={()=>onLogin(email,password)} disabled={loading} style={{width:"100%",padding:"12px",background:"#C4956A",color:"white",border:"none",borderRadius:10,fontSize:14,fontWeight:500,cursor:"pointer",fontFamily:"inherit"}}>
-          {loading?"Connexion...":"Se connecter"}
-        </button>
+        <button onClick={()=>onLogin(email,password)} disabled={loading} style={{width:"100%",padding:"12px",background:"#C4956A",color:"white",border:"none",borderRadius:10,fontSize:14,fontWeight:500,cursor:"pointer",fontFamily:"inherit"}}>{loading?"Connexion...":"Se connecter"}</button>
       </div>
     </div>
   );
@@ -436,55 +444,20 @@ function PatientCard({p,onClick}) {
     <div style={S.card} onClick={onClick}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
         <div style={S.avatar(p.id)}>{initials(p)}</div>
-        <div>
-          <div style={{fontFamily:"Georgia,serif",fontSize:16,color:"#2A2118"}}>{p.prenom} {p.nom}</div>
-          <div style={{fontSize:12,color:"#8A7968"}}>{getAge(p.ddn)}{p.sexe?" - "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"Autre"):""}</div>
-        </div>
+        <div><div style={{fontFamily:"Georgia,serif",fontSize:16,color:"#2A2118"}}>{p.prenom} {p.nom}</div><div style={{fontSize:12,color:"#8A7968"}}>{getAge(p.ddn)}{p.sexe?" - "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"Autre"):""}</div></div>
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
         {p.objectif&&<span style={S.tag("goal")}>{GOALS_FR[p.objectif]}</span>}
         {(p.diets||[]).slice(0,2).map(d=><span key={d} style={S.tag("diet")}>{DIET_FR[d]||d}</span>)}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,paddingTop:12,borderTop:"1px solid #F0EBE1"}}>
-        {[["kg",p.poids],["IMC",bmi],["obj.",p.poids_obj]].map(([k,v])=>(
-          <div key={k} style={{textAlign:"center"}}>
-            <div style={{fontSize:15,fontWeight:600,color:"#2A2118"}}>{v||"-"}</div>
-            <div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:1}}>{k}</div>
-          </div>
-        ))}
+        {[["kg",p.poids],["IMC",bmi],["obj.",p.poids_obj]].map(([k,v])=>(<div key={k} style={{textAlign:"center"}}><div style={{fontSize:15,fontWeight:600,color:"#2A2118"}}>{v||"-"}</div><div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:1}}>{k}</div></div>))}
       </div>
     </div>
   );
 }
 
-function ManualPlanEditor({days,tips,onDaysChange,onTipsChange}) {
-  const updateMeal=(di,mi,val)=>onDaysChange(days.map((d,i)=>i!==di?d:{...d,meals:d.meals.map((m,j)=>j!==mi?m:{...m,content:val})}));
-  const updateLabel=(di,val)=>onDaysChange(days.map((d,i)=>i===di?{...d,label:val}:d));
-  return (
-    <div style={{maxHeight:"54vh",overflowY:"auto",paddingRight:4}}>
-      {days.map((day,di)=>(
-        <div key={di} style={S.planDayWrap}>
-          <div style={{...S.planDayHeader,padding:"6px 10px"}}>
-            <input value={day.label} onChange={e=>updateLabel(di,e.target.value)} style={{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:6,color:"white",fontWeight:600,fontSize:13,padding:"3px 8px",fontFamily:"'DM Sans',sans-serif",width:"100%",outline:"none"}}/>
-          </div>
-          <div style={{padding:"10px 14px"}}>
-            {day.meals.map((m,mi)=>(
-              <div key={mi} style={{marginBottom:10}}>
-                <div style={S.planMealName}>{m.name}</div>
-                <textarea value={m.content} onChange={e=>updateMeal(di,mi,e.target.value)}
-                  placeholder={mi===0?"Ex: Yaourt nature, granola":mi===1?"Ex: Poulet grille, riz complet":mi===2?"Ex: Pomme, amandes":"Ex: Saumon vapeur, haricots verts"}
-                  style={{...S.textarea,minHeight:50,width:"100%",fontSize:12}}/>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-      <div style={S.formGroup}><label style={S.label}>Conseils (optionnel)</label><textarea style={{...S.textarea,minHeight:55}} value={tips} onChange={e=>onTipsChange(e.target.value)} placeholder="Ex: bien s'hydrater..."/></div>
-    </div>
-  );
-}
-
-function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAddNote,onExportPDF,loading}) {
+function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAddNote,onExportPDF,onPlansChange,loading}) {
   const bmi=calcBMI(p.poids,p.taille);
   const moralEmojis=["","😞","😕","😐","🙂","😄"];
   return (
@@ -502,22 +475,17 @@ function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAdd
         </div>
         <div style={{display:"flex",gap:8,flexShrink:0}}>
           <button style={S.btn("secondary")} onClick={onEdit}>Modifier</button>
-          <button style={S.btn("forest")} onClick={onGenPlan}>Nouveau plan</button>
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:22}}>
         <div>
           <div style={S.infoCard}>
             <div style={S.infoTitle}>Morphologie</div>
-            {[["Taille",p.taille?p.taille+" cm":"-"],["Poids initial",p.poids?p.poids+" kg":"-"],["Poids objectif",p.poids_obj?p.poids_obj+" kg":"-"],["IMC",bmi]].map(([k,v])=>(
-              <div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500}}>{v}</span></div>
-            ))}
+            {[["Taille",p.taille?p.taille+" cm":"-"],["Poids initial",p.poids?p.poids+" kg":"-"],["Poids objectif",p.poids_obj?p.poids_obj+" kg":"-"],["IMC",bmi]].map(([k,v])=>(<div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500}}>{v}</span></div>))}
           </div>
           <div style={S.infoCard}>
             <div style={S.infoTitle}>Mode de vie</div>
-            {[["Activite",ACTIVITE_FR[p.activite]||"-"],["Objectif",GOALS_FR[p.objectif]||"-"]].map(([k,v])=>(
-              <div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500}}>{v}</span></div>
-            ))}
+            {[["Activite",ACTIVITE_FR[p.activite]||"-"],["Objectif",GOALS_FR[p.objectif]||"-"]].map(([k,v])=>(<div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500}}>{v}</span></div>))}
             {p.allergies&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Allergies</span><span style={{fontWeight:500,fontSize:12,textAlign:"right",maxWidth:160}}>{p.allergies}</span></div>}
             {p.antecedents&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Antecedents</span><span style={{fontWeight:500,fontSize:12,textAlign:"right",maxWidth:160}}>{p.antecedents}</span></div>}
           </div>
@@ -536,40 +504,14 @@ function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAdd
               <div style={S.infoTitle}>Notes praticien</div>
               <button style={{...S.btn("secondary"),padding:"5px 11px",fontSize:11}} onClick={onAddNote}>+ Ajouter</button>
             </div>
-            {loading?<Spinner/>:notes.length===0
-              ?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune note</p>
-              :notes.map((n,i)=>(
-                <div key={i} style={{background:"#F0EBE1",borderRadius:9,padding:"11px 13px",borderLeft:"3px solid #7A9E7E",marginBottom:8}}>
-                  <div style={{fontSize:11,color:"#8A7968",marginBottom:4}}>{new Date(n.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</div>
-                  <div style={{fontSize:13,color:"#3D3228",lineHeight:1.5}}>{n.text}</div>
-                </div>
-              ))
-            }
+            {loading?<Spinner/>:notes.length===0?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune note</p>:notes.map((n,i)=>(<div key={i} style={{background:"#F0EBE1",borderRadius:9,padding:"11px 13px",borderLeft:"3px solid #7A9E7E",marginBottom:8}}><div style={{fontSize:11,color:"#8A7968",marginBottom:4}}>{new Date(n.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</div><div style={{fontSize:13,color:"#3D3228",lineHeight:1.5}}>{n.text}</div></div>))}
           </div>
         </div>
         <div>
           <PoidsSection patientId={p.id} objectif={p.poids_obj} token={token}/>
           <MensurationsSection patientId={p.id} token={token}/>
           <div style={S.infoCard}>
-            <div style={S.infoTitle}>Plans alimentaires</div>
-            {loading?<Spinner/>:plans.length===0
-              ?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucun plan.</p>
-              :plans.map((plan,i)=>(
-                <div key={i} style={{background:"#F0EBE1",borderRadius:12,marginBottom:14,overflow:"hidden"}}>
-                  <div style={{background:plan.mode==="manual"?"#3D5A47":"#C4956A",color:"white",padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontSize:13,fontWeight:600}}>Plan {i+1} - {new Date(plan.created_at).toLocaleDateString("fr-FR")}</span>
-                    <div style={{display:"flex",gap:6}}>
-                      <span style={{fontSize:10,background:"rgba(255,255,255,0.2)",padding:"2px 8px",borderRadius:20}}>{plan.duration}</span>
-                      <span style={{fontSize:10,background:"rgba(255,255,255,0.15)",padding:"2px 8px",borderRadius:20}}>{plan.mode==="manual"?"Manuel":"IA"}</span>
-                    </div>
-                  </div>
-                  <div style={{padding:"12px 14px"}}>
-                    <PlanDays days={plan.days}/>
-                    {plan.tips&&<div style={{marginTop:10,padding:"9px 12px",background:"rgba(61,90,71,0.08)",borderRadius:8,fontSize:12,color:"#3D5A47",lineHeight:1.5}}>Conseils : {plan.tips}</div>}
-                  </div>
-                </div>
-              ))
-            }
+            <PlansSection plans={plans} loading={loading} token={token} onNewPlan={onGenPlan} onPlansChange={onPlansChange}/>
           </div>
           {p.notes&&<div style={S.infoCard}><div style={S.infoTitle}>Notes initiales</div><p style={{fontSize:13,color:"#3D3228",lineHeight:1.6}}>{p.notes}</p></div>}
           <div style={{textAlign:"right",marginTop:8,display:"flex",justifyContent:"flex-end",gap:8}}>
@@ -602,7 +544,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [planMode, setPlanMode] = useState("choice");
-  const [planDuration, setPlanDuration] = useState("3j");
+  const [planDuration, setPlanDuration] = useState("7j");
   const [planInstr, setPlanInstr] = useState("");
   const [planState, setPlanState] = useState("idle");
   const [planResult, setPlanResult] = useState(null);
@@ -624,54 +566,19 @@ export default function App() {
     setAuthLoading(false);
   };
 
-  const handleLogout = async () => {
-    await db.logout(token);
-    localStorage.removeItem("sodiet_session");
-    setSession(null); setPatients([]);
-  };
+  const handleLogout = async () => { await db.logout(token); localStorage.removeItem("sodiet_session"); setSession(null); setPatients([]); };
 
-  useEffect(()=>{
-    if(!session) return;
-    setLoadingPatients(true);
-    db.getPatients(token).then(data=>{setPatients(data||[]);setLoadingPatients(false);}).catch(()=>setLoadingPatients(false));
-  },[session]);
+  useEffect(()=>{ if(!session) return; setLoadingPatients(true); db.getPatients(token).then(data=>{setPatients(data||[]);setLoadingPatients(false);}).catch(()=>setLoadingPatients(false)); },[session]);
+  useEffect(()=>{ if(!session) return; setLoadingRDV(true); db.getRDV(token).then(data=>{setRdvList(data||[]);setLoadingRDV(false);}).catch(()=>setLoadingRDV(false)); },[session]);
+  useEffect(()=>{ if(panel==="profile"&&currentId&&token){ setProfileLoading(true); Promise.all([db.getPlans(currentId,token),db.getNotes(currentId,token)]).then(([plans,notes])=>{setProfilePlans(plans||[]);setProfileNotes(notes||[]);setProfileLoading(false);}).catch(()=>setProfileLoading(false)); } },[panel,currentId]);
 
-  useEffect(()=>{
-    if(!session) return;
-    setLoadingRDV(true);
-    db.getRDV(token).then(data=>{setRdvList(data||[]);setLoadingRDV(false);}).catch(()=>setLoadingRDV(false));
-  },[session]);
-
-  useEffect(()=>{
-    if(panel==="profile"&&currentId&&token){
-      setProfileLoading(true);
-      Promise.all([db.getPlans(currentId,token),db.getNotes(currentId,token)])
-        .then(([plans,notes])=>{setProfilePlans(plans||[]);setProfileNotes(notes||[]);setProfileLoading(false);})
-        .catch(()=>setProfileLoading(false));
-    }
-  },[panel,currentId]);
-
-  const closeModal = () => {
-    setModal(null); setPlanMode("choice"); setPlanState("idle");
-    setPlanResult(null); setPlanInstr(""); setPlanDuration("3j");
-    setPlanError(""); setManualDays([]); setManualTips("");
-    setRdvForm(EMPTY_RDV);
-  };
+  const closeModal = () => { setModal(null); setPlanMode("choice"); setPlanState("idle"); setPlanResult(null); setPlanInstr(""); setPlanDuration("7j"); setPlanError(""); setManualDays([]); setManualTips(""); setRdvForm(EMPTY_RDV); };
 
   const savePatient = async () => {
     if(!form.prenom.trim()||!form.nom.trim()){alert("Prenom et nom requis");return;}
     setSaving(true);
     try {
-      const payload={
-        prenom:form.prenom,nom:form.nom,ddn:form.ddn||null,sexe:form.sexe||null,
-        email:form.email||null,tel:form.tel||null,taille:form.taille?+form.taille:null,
-        poids:form.poids?+form.poids:null,poids_obj:form.poids_obj?+form.poids_obj:null,
-        objectif:form.objectif,activite:form.activite,diets:form.diets||[],
-        antecedents:form.antecedents||null,allergies:form.allergies||null,notes:form.notes||null,
-        sommeil:form.sommeil||null,transit:form.transit||null,
-        moral:form.moral?+form.moral:null,alimentation:form.alimentation||null,
-        prise_de_sang:form.prise_de_sang||null
-      };
+      const payload={prenom:form.prenom,nom:form.nom,ddn:form.ddn||null,sexe:form.sexe||null,email:form.email||null,tel:form.tel||null,taille:form.taille?+form.taille:null,poids:form.poids?+form.poids:null,poids_obj:form.poids_obj?+form.poids_obj:null,objectif:form.objectif,activite:form.activite,diets:form.diets||[],antecedents:form.antecedents||null,allergies:form.allergies||null,notes:form.notes||null,sommeil:form.sommeil||null,transit:form.transit||null,moral:form.moral?+form.moral:null,alimentation:form.alimentation||null,prise_de_sang:form.prise_de_sang||null};
       if(editId){await db.updatePatient(editId,payload,token);setPatients(ps=>ps.map(p=>p.id===editId?{...p,...payload}:p));}
       else{const [created]=await db.addPatient(payload,token);setPatients(ps=>[created,...ps]);}
       closeModal();
@@ -679,37 +586,16 @@ export default function App() {
     setSaving(false);
   };
 
-  const deletePatient = async (id) => {
-    if(!confirm("Supprimer ce patient ?")) return;
-    await db.deletePatient(id,token);
-    setPatients(ps=>ps.filter(p=>p.id!==id)); setPanel("patients");
-  };
-
-  const saveNote = async () => {
-    if(!noteText.trim()) return;
-    setSaving(true);
-    try{const [note]=await db.addNote({patient_id:currentId,text:noteText},token);setProfileNotes(ns=>[note,...ns]);setNoteText("");closeModal();}
-    catch(e){alert("Erreur : "+e.message);}
-    setSaving(false);
-  };
-
-  const saveRDV = async () => {
-    if(!rdvForm.patient_id||!rdvForm.date||!rdvForm.heure){alert("Patient, date et heure requis");return;}
-    setSaving(true);
-    try{
-      const [rdv]=await db.addRDV(rdvForm,token);
-      setRdvList(rs=>[...rs,rdv].sort((a,b)=>a.date+a.heure>b.date+b.heure?1:-1));
-      closeModal();
-    }catch(e){alert("Erreur : "+e.message);}
-    setSaving(false);
-  };
-
+  const deletePatient = async (id) => { if(!confirm("Supprimer ce patient ?")) return; await db.deletePatient(id,token); setPatients(ps=>ps.filter(p=>p.id!==id)); setPanel("patients"); };
+  const saveNote = async () => { if(!noteText.trim()) return; setSaving(true); try{const [note]=await db.addNote({patient_id:currentId,text:noteText},token);setProfileNotes(ns=>[note,...ns]);setNoteText("");closeModal();}catch(e){alert("Erreur : "+e.message);} setSaving(false); };
+  const saveRDV = async () => { if(!rdvForm.patient_id||!rdvForm.date||!rdvForm.heure){alert("Patient, date et heure requis");return;} setSaving(true); try{const [rdv]=await db.addRDV(rdvForm,token);setRdvList(rs=>[...rs,rdv].sort((a,b)=>a.date+a.heure>b.date+b.heure?1:-1));closeModal();}catch(e){alert("Erreur : "+e.message);} setSaving(false); };
   const deleteRDV = async (id) => { await db.deleteRDV(id,token); setRdvList(rs=>rs.filter(r=>r.id!==id)); };
 
   const saveManualPlan = async () => {
     setSaving(true);
+    const durLabel = planDuration==="journee"?"Journee type":planDuration==="7j"?"7 jours":"3 jours";
     try{
-      const [plan]=await db.addPlan({patient_id:currentId,duration:planDuration==="7j"?"7 jours":"3 jours",mode:"manual",tips:manualTips,days:manualDays},token);
+      const [plan]=await db.addPlan({patient_id:currentId,duration:durLabel,mode:"manual",tips:manualTips,days:manualDays},token);
       setProfilePlans(ps=>[plan,...ps]);setTotalPlans(c=>c+1);
       setPlanResult({days:manualDays,tips:manualTips});setPlanState("done");
     }catch(e){alert("Erreur : "+e.message);}
@@ -721,8 +607,10 @@ export default function App() {
     if(!p) return;
     setPlanState("loading");setPlanError("");
     const dietStr=(p.diets||[]).map(d=>DIET_FR[d]||d).join(", ")||"aucune restriction";
-    const daysCount=planDuration==="7j"?7:3;
-    const prompt="Tu es un nutritionniste expert. Genere un plan alimentaire en JSON strict.\n\nProfil: "+p.prenom+", "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"N/A")+", "+(p.taille||"?")+"cm, "+(p.poids||"?")+"kg, objectif "+(p.poids_obj||"?")+"kg, "+(GOALS_FR[p.objectif]||"?")+", "+(ACTIVITE_FR[p.activite]||"?")+", regime: "+dietStr+", allergies: "+(p.allergies||"aucune")+"."+(planInstr?" Instructions: "+planInstr+".":"")+"\n\nReponds UNIQUEMENT avec ce JSON (rien d'autre, pas de backticks) pour "+daysCount+" jours. Sois CONCIS (max 15 mots par repas):\n{\"days\":[{\"label\":\"Jour 1\",\"meals\":[{\"name\":\"Petit-dejeuner\",\"content\":\"...\"},{\"name\":\"Dejeuner\",\"content\":\"...\"},{\"name\":\"Collation\",\"content\":\"...\"},{\"name\":\"Diner\",\"content\":\"...\"}]}],\"tips\":\"Un conseil court.\"}";
+    const isJournee = planDuration==="journee";
+    const daysCount = isJournee?1:planDuration==="7j"?7:3;
+    const durLabel = isJournee?"Journee type":planDuration==="7j"?"7 jours":"3 jours";
+    const prompt="Tu es un nutritionniste expert. Genere un plan alimentaire en JSON strict.\n\nProfil: "+p.prenom+", "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"N/A")+", "+(p.taille||"?")+"cm, "+(p.poids||"?")+"kg, objectif "+(p.poids_obj||"?")+"kg, "+(GOALS_FR[p.objectif]||"?")+", "+(ACTIVITE_FR[p.activite]||"?")+", regime: "+dietStr+", allergies: "+(p.allergies||"aucune")+"."+(planInstr?" Instructions: "+planInstr+".":"")+"\n\nReponds UNIQUEMENT avec ce JSON (rien d'autre, pas de backticks) pour "+(isJournee?"une journee type":daysCount+" jours")+". Pour chaque repas, inclure le grammage/quantite recommande. Sois CONCIS (max 20 mots par repas):\n{\"days\":[{\"label\":\""+(isJournee?"Journee type":"Jour 1")+"\",\"meals\":[{\"name\":\"Petit-dejeuner\",\"content\":\"description\",\"grammage\":\"ex: 150g yaourt, 40g granola\"},{\"name\":\"Dejeuner\",\"content\":\"description\",\"grammage\":\"ex: 150g poulet, 80g riz\"},{\"name\":\"Collation\",\"content\":\"description\",\"grammage\":\"ex: 1 pomme, 30g amandes\"},{\"name\":\"Diner\",\"content\":\"description\",\"grammage\":\"ex: 180g saumon, 200g legumes\"}]}],\"tips\":\"Un conseil court.\"}";
     try{
       const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:prompt}]})});
       if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||"HTTP "+res.status);}
@@ -731,7 +619,7 @@ export default function App() {
       const clean=raw.replace(/```json|```/g,"").trim();
       let parsed;
       try{parsed=JSON.parse(clean);}catch(e){const s=clean.indexOf("{"),end=clean.lastIndexOf("}");if(s===-1||end===-1)throw new Error("JSON invalide");parsed=JSON.parse(clean.slice(s,end+1).replace(/,\s*([}\]])/g,"$1"));}
-      const [plan]=await db.addPlan({patient_id:currentId,duration:planDuration==="7j"?"7 jours":"3 jours",mode:"ai",tips:parsed.tips||"",days:parsed.days||[]},token);
+      const [plan]=await db.addPlan({patient_id:currentId,duration:durLabel,mode:"ai",tips:parsed.tips||"",days:parsed.days||[]},token);
       setProfilePlans(ps=>[plan,...ps]);setTotalPlans(c=>c+1);
       setPlanResult(parsed);setPlanState("done");
     }catch(e){setPlanError(e.message||"Erreur inconnue");setPlanState("error");}
@@ -740,15 +628,12 @@ export default function App() {
   const exportPatientPDF = (p, plans, notes) => {
     const win=window.open("","_blank");
     const bmi=calcBMI(p.poids,p.taille);
-    const plansHtml=(plans||[]).map((plan,i)=>"<div style='margin-bottom:24px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>Plan "+(i+1)+" - "+new Date(plan.created_at).toLocaleDateString("fr-FR")+" ("+plan.duration+")</div><div style='border:1px solid #E8DDD0;border-top:none;padding:12px 14px;border-radius:0 0 6px 6px'>"+(plan.days||[]).map(day=>"<div style='margin-bottom:10px'><div style='font-weight:600;color:#8B5E3C;font-size:12px;text-transform:uppercase;margin-bottom:4px'>"+day.label+"</div>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:4px 0;border-bottom:1px solid #f5f5f5;font-size:13px'><strong style='color:#8A7968'>"+m.name+" :</strong> "+m.content+"</div>").join("")+"</div>").join("")+(plan.tips?"<div style='background:#f0f7f2;border-left:3px solid #7A9E7E;padding:8px 12px;margin-top:8px;font-size:12px'>Conseils : "+plan.tips+"</div>":"")+"</div></div>").join("");
+    const plansHtml=(plans||[]).map((plan,i)=>"<div style='margin-bottom:24px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>Plan "+(i+1)+" - "+new Date(plan.created_at).toLocaleDateString("fr-FR")+" ("+plan.duration+")</div><div style='border:1px solid #E8DDD0;border-top:none;padding:12px 14px;border-radius:0 0 6px 6px'>"+(plan.days||[]).map(day=>"<div style='margin-bottom:10px'><div style='font-weight:600;color:#8B5E3C;font-size:12px;text-transform:uppercase;margin-bottom:4px'>"+day.label+"</div>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:4px 0;border-bottom:1px solid #f5f5f5;font-size:13px'><strong style='color:#8A7968'>"+m.name+(m.grammage?" <span style='color:#C4956A;font-size:11px'>("+m.grammage+")</span>":"")+" :</strong> "+m.content+"</div>").join("")+"</div>").join("")+(plan.tips?"<div style='background:#f0f7f2;border-left:3px solid #7A9E7E;padding:8px 12px;margin-top:8px;font-size:12px'>Conseils : "+plan.tips+"</div>":"")+"</div></div>").join("");
     const notesHtml=(notes||[]).map(n=>"<div style='border-left:3px solid #7A9E7E;padding:8px 12px;margin-bottom:8px;background:#f9f9f9'><div style='font-size:11px;color:#8A7968;margin-bottom:4px'>"+new Date(n.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div><div style='font-size:13px'>"+n.text+"</div></div>").join("");
     win.document.write("<!DOCTYPE html><html><head><title>Dossier - "+p.prenom+" "+p.nom+"</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;color:#3D3228;padding:0 20px}h1{color:#2A2118;font-size:26px}h2{color:#C4956A;font-size:13px;letter-spacing:2px;text-transform:uppercase;margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid #E8DDD0}.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}.stat{background:#FAF7F2;border:1px solid #E8DDD0;border-radius:8px;padding:12px;text-align:center}.stat-val{font-size:18px;font-weight:600;color:#2A2118}.stat-label{font-size:10px;color:#8A7968;text-transform:uppercase;margin-top:2px}@media print{button{display:none}}</style></head><body>"+
-    "<div style='display:flex;justify-content:space-between;align-items:start;margin-bottom:24px'><div><h1>"+p.prenom+" "+p.nom+"</h1><div style='color:#8A7968;font-size:13px;margin-top:4px'>"+getAge(p.ddn)+(p.sexe?" - "+(p.sexe==="F"?"Femme":"Homme"):"")+(p.email?" - "+p.email:"")+"</div></div><div style='font-size:11px;color:#8A7968;text-align:right'>SoDiet - Dossier patient<br>"+new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</div></div>"+
-    "<h2>Donnees morphologiques</h2><div class='grid'><div class='stat'><div class='stat-val'>"+(p.taille||"-")+" cm</div><div class='stat-label'>Taille</div></div><div class='stat'><div class='stat-val'>"+(p.poids||"-")+" kg</div><div class='stat-label'>Poids initial</div></div><div class='stat'><div class='stat-val'>"+(p.poids_obj||"-")+" kg</div><div class='stat-label'>Objectif</div></div><div class='stat'><div class='stat-val'>"+bmi+"</div><div class='stat-label'>IMC</div></div><div class='stat'><div class='stat-val'>"+(ACTIVITE_FR[p.activite]||"-")+"</div><div class='stat-label'>Activite</div></div></div>"+
-    ((p.sommeil||p.transit||p.moral||p.alimentation)?"<h2>Bilan sante</h2><div class='grid'>"+(p.sommeil?"<div class='stat'><div class='stat-val'>"+(SOMMEIL_FR[p.sommeil]||p.sommeil)+"</div><div class='stat-label'>Sommeil</div></div>":"")+(p.transit?"<div class='stat'><div class='stat-val'>"+(TRANSIT_FR[p.transit]||p.transit)+"</div><div class='stat-label'>Transit</div></div>":"")+(p.moral?"<div class='stat'><div class='stat-val'>"+p.moral+"/5</div><div class='stat-label'>Moral</div></div>":"")+(p.alimentation?"<div class='stat'><div class='stat-val'>"+(ALIM_FR[p.alimentation]||p.alimentation)+"</div><div class='stat-label'>Alimentation</div></div>":"")+"</div>":"")+
-    (p.prise_de_sang?"<div style='background:#f5f8ff;border:1px solid #c0c8f5;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px'><strong>Prise de sang :</strong> "+p.prise_de_sang+"</div>":"")+
+    "<h1>"+p.prenom+" "+p.nom+"</h1><p style='color:#8A7968;font-size:13px;margin-bottom:24px'>"+getAge(p.ddn)+(p.sexe?" - "+(p.sexe==="F"?"Femme":"Homme"):"")+" | SoDiet - "+new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+"</p>"+
+    "<h2>Morphologie</h2><div class='grid'><div class='stat'><div class='stat-val'>"+(p.taille||"-")+"cm</div><div class='stat-label'>Taille</div></div><div class='stat'><div class='stat-val'>"+(p.poids||"-")+"kg</div><div class='stat-label'>Poids initial</div></div><div class='stat'><div class='stat-val'>"+(p.poids_obj||"-")+"kg</div><div class='stat-label'>Objectif</div></div><div class='stat'><div class='stat-val'>"+bmi+"</div><div class='stat-label'>IMC</div></div></div>"+
     (p.allergies?"<div style='background:#fff8f5;border:1px solid #f5c0b8;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px'><strong>Allergies :</strong> "+p.allergies+"</div>":"")+
-    (p.antecedents?"<div style='background:#f5f8ff;border:1px solid #c0c8f5;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px'><strong>Antecedents :</strong> "+p.antecedents+"</div>":"")+
     (notesHtml?"<h2>Notes de consultation</h2>"+notesHtml:"")+
     (plansHtml?"<h2>Plans alimentaires</h2>"+plansHtml:"")+
     "<br/><button onclick='window.print()' style='padding:10px 24px;background:#C4956A;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px'>Imprimer / Exporter en PDF</button></body></html>");
@@ -756,14 +641,14 @@ export default function App() {
   };
 
   const handleShare = (result) => {
-    const lines=(result.days||[]).flatMap(day=>["\n== "+day.label+" ==",...(day.meals||[]).filter(m=>m.content).map(m=>m.name+" : "+m.content)]);
+    const lines=(result.days||[]).flatMap(day=>["\n== "+day.label+" ==",...(day.meals||[]).filter(m=>m.content).map(m=>m.name+(m.grammage?" ("+m.grammage+")")+" : "+m.content)]);
     if(result.tips)lines.push("\nConseils : "+result.tips);
     window.location.href="mailto:"+(currentPatient?.email||"")+"?subject=Plan alimentaire SoDiet&body="+encodeURIComponent("Plan alimentaire - "+(currentPatient?.prenom)+" "+(currentPatient?.nom)+"\n"+lines.join("\n"));
   };
 
   const handlePrint = (result) => {
     const win=window.open("","_blank");
-    const daysHtml=(result.days||[]).map(day=>"<div style='margin-bottom:18px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>"+day.label+"</div><div style='border:1px solid #E8DDD0;border-top:none;border-radius:0 0 6px 6px;padding:10px 14px'>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:6px 0;border-bottom:1px solid #f0ebe1'><strong style='color:#8A7968'>"+m.name+" :</strong> "+m.content+"</div>").join("")+"</div></div>").join("");
+    const daysHtml=(result.days||[]).map(day=>"<div style='margin-bottom:18px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>"+day.label+"</div><div style='border:1px solid #E8DDD0;border-top:none;border-radius:0 0 6px 6px;padding:10px 14px'>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:6px 0;border-bottom:1px solid #f0ebe1'><strong style='color:#8A7968'>"+m.name+"</strong>"+(m.grammage?" <span style='color:#C4956A;font-size:11px'>("+m.grammage+")</span>":"")+" : "+m.content+"</div>").join("")+"</div></div>").join("");
     win.document.write("<!DOCTYPE html><html><head><title>Plan SoDiet</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;color:#3D3228}@media print{button{display:none}}</style></head><body><h1>Plan alimentaire SoDiet</h1><p style='color:#8A7968;margin-bottom:28px'>"+(currentPatient?.prenom)+" "+(currentPatient?.nom)+" - "+new Date().toLocaleDateString("fr-FR")+"</p>"+daysHtml+(result.tips?"<div style='background:#f0f7f2;border-left:3px solid #7A9E7E;padding:12px;margin-top:8px'>Conseils : "+result.tips+"</div>":"")+"<br/><button onclick='window.print()' style='padding:10px 20px;background:#C4956A;color:white;border:none;border-radius:8px;cursor:pointer'>Imprimer</button></body></html>");
     win.document.close();
   };
@@ -772,40 +657,31 @@ export default function App() {
 
   if(!session) return <LoginPage onLogin={handleLogin} error={authError} loading={authLoading}/>;
 
+  const PLAN_DURATIONS = [
+    ["journee","☀️","Journee type","Modele de journee ideale"],
+    ["3j","📅","3 jours","Demarrage rapide"],
+    ["7j","🗓️","1 semaine","Plan complet"],
+  ];
+
   return (
     <div style={S.app}>
       <style>{"@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}input:focus,select:focus,textarea:focus{border-color:#C4956A !important;outline:none;}::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-thumb{background:#C4956A;border-radius:2px;}"}</style>
 
       <aside style={S.sidebar}>
-        <div style={S.logoBox}>
-          <div style={S.logoText}>SoDiet</div>
-          <div style={S.logoSub}>Espace praticien</div>
-        </div>
+        <div style={S.logoBox}><div style={S.logoText}>SoDiet</div><div style={S.logoSub}>Espace praticien</div></div>
         <div style={S.navArea}>
           <div style={S.navLabel}>Menu</div>
           <div style={S.navItem(panel==="dashboard")} onClick={()=>setPanel("dashboard")}><span>⊞</span>Tableau de bord</div>
           <div style={S.navItem(panel==="patients"||panel==="profile")} onClick={()=>setPanel("patients")}><span>👥</span>Mes patients</div>
           <div style={S.navItem(panel==="agenda")} onClick={()=>setPanel("agenda")}><span>📅</span>Agenda</div>
-          {patients.length>0&&<>
-            <div style={{...S.navLabel,marginTop:16}}>Patients recents</div>
-            {patients.slice(0,8).map(p=>(
-              <div key={p.id} style={S.patChip(currentId===p.id&&panel==="profile")} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}>
-                <div style={S.avatar(p.id,26)}>{initials(p)}</div>
-                <span style={{fontSize:12,color:"rgba(255,255,255,0.65)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.prenom} {p.nom}</span>
-              </div>
-            ))}
-          </>}
+          {patients.length>0&&<><div style={{...S.navLabel,marginTop:16}}>Patients recents</div>{patients.slice(0,8).map(p=>(<div key={p.id} style={S.patChip(currentId===p.id&&panel==="profile")} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}><div style={S.avatar(p.id,26)}>{initials(p)}</div><span style={{fontSize:12,color:"rgba(255,255,255,0.65)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.prenom} {p.nom}</span></div>))}</>}
         </div>
-        <div style={{padding:"16px 12px",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
-          <div onClick={handleLogout} style={{...S.navItem(false),cursor:"pointer"}}><span>⎋</span>Deconnexion</div>
-        </div>
+        <div style={{padding:"16px 12px",borderTop:"1px solid rgba(255,255,255,0.07)"}}><div onClick={handleLogout} style={{...S.navItem(false),cursor:"pointer"}}><span>⎋</span>Deconnexion</div></div>
       </aside>
 
       <main style={S.main}>
         <div style={S.topbar}>
-          <div style={S.pageTitle}>
-            {panel==="dashboard"?"Tableau de bord":panel==="patients"?"Mes patients":panel==="agenda"?"Agenda":currentPatient?(currentPatient.prenom+" "+currentPatient.nom):"Patients"}
-          </div>
+          <div style={S.pageTitle}>{panel==="dashboard"?"Tableau de bord":panel==="patients"?"Mes patients":panel==="agenda"?"Agenda":currentPatient?(currentPatient.prenom+" "+currentPatient.nom):"Patients"}</div>
           <button style={S.btn("primary")} onClick={()=>{setForm(EMPTY_FORM);setEditId(null);setModal("patient");}}>+ Nouveau patient</button>
         </div>
 
@@ -813,45 +689,16 @@ export default function App() {
           {panel==="dashboard"&&(
             <div>
               <div style={S.statsGrid}>
-                {[["Total patients",patients.length,"dans votre cabinet"],["Perte de poids",patients.filter(p=>p.objectif==="perte_poids").length,"objectif principal"],["RDV a venir",rdvList.filter(r=>r.date>=new Date().toISOString().split("T")[0]).length,"rendez-vous planifies"],["Plans crees",totalPlans,"cette session"]].map(([l,v,s])=>(
-                  <div key={l} style={S.statCard}>
-                    <div style={S.statLabel}>{l}</div>
-                    <div style={S.statValue}>{v}</div>
-                    <div style={S.statSub}>{s}</div>
-                  </div>
-                ))}
+                {[["Total patients",patients.length,"dans votre cabinet"],["Perte de poids",patients.filter(p=>p.objectif==="perte_poids").length,"objectif principal"],["RDV a venir",rdvList.filter(r=>r.date>=new Date().toISOString().split("T")[0]).length,"rendez-vous planifies"],["Plans crees",totalPlans,"cette session"]].map(([l,v,s])=>(<div key={l} style={S.statCard}><div style={S.statLabel}>{l}</div><div style={S.statValue}>{v}</div><div style={S.statSub}>{s}</div></div>))}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:22}}>
                 <div style={{...S.infoCard,padding:28}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-                    <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Patients recents</div>
-                    <button style={{...S.btn("secondary"),fontSize:12}} onClick={()=>setPanel("patients")}>Voir tous</button>
-                  </div>
-                  {loadingPatients?<Spinner/>:patients.length===0
-                    ?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>🌿</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun patient</div><div style={{fontSize:13}}>Ajoutez votre premier patient</div></div>
-                    :<div style={S.patientsGrid}>{patients.slice(0,4).map(p=><PatientCard key={p.id} p={p} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}/>)}</div>
-                  }
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}><div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Patients recents</div><button style={{...S.btn("secondary"),fontSize:12}} onClick={()=>setPanel("patients")}>Voir tous</button></div>
+                  {loadingPatients?<Spinner/>:patients.length===0?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>🌿</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun patient</div></div>:<div style={S.patientsGrid}>{patients.slice(0,4).map(p=><PatientCard key={p.id} p={p} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}/>)}</div>}
                 </div>
                 <div style={{...S.infoCard,padding:22}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                    <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#2A2118"}}>Prochains RDV</div>
-                    <button style={{...S.btn("secondary"),fontSize:11,padding:"5px 10px"}} onClick={()=>setPanel("agenda")}>Voir tous</button>
-                  </div>
-                  {loadingRDV?<Spinner/>:rdvList.filter(r=>r.date>=new Date().toISOString().split("T")[0]).slice(0,5).length===0
-                    ?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucun RDV a venir</p>
-                    :rdvList.filter(r=>r.date>=new Date().toISOString().split("T")[0]).slice(0,5).map((r,i)=>(
-                      <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:"1px solid #F0EBE1"}}>
-                        <div style={{background:"#C4956A",color:"white",borderRadius:8,padding:"6px 10px",textAlign:"center",minWidth:44,flexShrink:0}}>
-                          <div style={{fontSize:16,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
-                          <div style={{fontSize:9,textTransform:"uppercase"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
-                        </div>
-                        <div>
-                          <div style={{fontSize:13,fontWeight:600,color:"#2A2118"}}>{r.patients?.prenom} {r.patients?.nom}</div>
-                          <div style={{fontSize:11,color:"#8A7968"}}>{r.heure.slice(0,5)} — {r.duree} min</div>
-                        </div>
-                      </div>
-                    ))
-                  }
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#2A2118"}}>Prochains RDV</div><button style={{...S.btn("secondary"),fontSize:11,padding:"5px 10px"}} onClick={()=>setPanel("agenda")}>Voir tous</button></div>
+                  {loadingRDV?<Spinner/>:rdvList.filter(r=>r.date>=new Date().toISOString().split("T")[0]).slice(0,5).length===0?<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucun RDV a venir</p>:rdvList.filter(r=>r.date>=new Date().toISOString().split("T")[0]).slice(0,5).map((r,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:"1px solid #F0EBE1"}}><div style={{background:"#C4956A",color:"white",borderRadius:8,padding:"6px 10px",textAlign:"center",minWidth:44,flexShrink:0}}><div style={{fontSize:16,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div><div style={{fontSize:9,textTransform:"uppercase"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div></div><div><div style={{fontSize:13,fontWeight:600,color:"#2A2118"}}>{r.patients?.prenom} {r.patients?.nom}</div><div style={{fontSize:11,color:"#8A7968"}}>{r.heure.slice(0,5)} — {r.duree} min</div></div></div>))}
                 </div>
               </div>
             </div>
@@ -859,14 +706,8 @@ export default function App() {
 
           {panel==="patients"&&(
             <div>
-              <div style={{position:"relative",marginBottom:24}}>
-                <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#8A7968"}}>🔍</span>
-                <input style={{...S.input,width:"100%",paddingLeft:40,borderRadius:12}} placeholder="Rechercher un patient..." value={search} onChange={e=>setSearch(e.target.value)}/>
-              </div>
-              {loadingPatients?<Spinner/>:filteredPatients.length===0
-                ?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>🌿</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>{search?"Aucun resultat":"Aucun patient"}</div><div style={{fontSize:13}}>{search?"Essayez un autre terme":"Cliquez sur Nouveau patient"}</div></div>
-                :<div style={S.patientsGrid}>{filteredPatients.map(p=><PatientCard key={p.id} p={p} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}/>)}</div>
-              }
+              <div style={{position:"relative",marginBottom:24}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#8A7968"}}>🔍</span><input style={{...S.input,width:"100%",paddingLeft:40,borderRadius:12}} placeholder="Rechercher un patient..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
+              {loadingPatients?<Spinner/>:filteredPatients.length===0?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>🌿</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>{search?"Aucun resultat":"Aucun patient"}</div></div>:<div style={S.patientsGrid}>{filteredPatients.map(p=><PatientCard key={p.id} p={p} onClick={()=>{setCurrentId(p.id);setPanel("profile");}}/>)}</div>}
             </div>
           )}
 
@@ -880,6 +721,7 @@ export default function App() {
               onGenPlan={()=>{setPlanMode("choice");setPlanState("idle");setPlanResult(null);setModal("plan");}}
               onAddNote={()=>setModal("note")}
               onExportPDF={()=>exportPatientPDF(currentPatient,profilePlans,profileNotes)}
+              onPlansChange={setProfilePlans}
             />
           )}
         </div>
@@ -888,10 +730,7 @@ export default function App() {
       {modal==="patient"&&(
         <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div style={S.modal}>
-            <div style={S.modalHeader}>
-              <div style={S.modalTitle}>{editId?"Modifier le patient":"Nouveau patient"}</div>
-              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
-            </div>
+            <div style={S.modalHeader}><div style={S.modalTitle}>{editId?"Modifier le patient":"Nouveau patient"}</div><button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button></div>
             <div style={S.modalBody}>
               <SectionTitle>Informations personnelles</SectionTitle>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -915,13 +754,7 @@ export default function App() {
               </div>
               <SectionTitle>Regime et restrictions</SectionTitle>
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                {Object.entries(DIET_FR).map(([v,l])=>{
-                  const checked=(form.diets||[]).includes(v);
-                  return(<label key={v} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",border:"1.5px solid "+(checked?"#C4956A":"#E8DDD0"),borderRadius:8,cursor:"pointer",fontSize:12,background:checked?"rgba(196,149,106,0.1)":"white",color:checked?"#8B5E3C":"#3D3228"}}>
-                    <input type="checkbox" style={{display:"none"}} checked={checked} onChange={e=>setForm(f=>({...f,diets:e.target.checked?[...(f.diets||[]),v]:(f.diets||[]).filter(d=>d!==v)}))}/>
-                    {l}
-                  </label>);
-                })}
+                {Object.entries(DIET_FR).map(([v,l])=>{const checked=(form.diets||[]).includes(v);return(<label key={v} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",border:"1.5px solid "+(checked?"#C4956A":"#E8DDD0"),borderRadius:8,cursor:"pointer",fontSize:12,background:checked?"rgba(196,149,106,0.1)":"white",color:checked?"#8B5E3C":"#3D3228"}}><input type="checkbox" style={{display:"none"}} checked={checked} onChange={e=>setForm(f=>({...f,diets:e.target.checked?[...(f.diets||[]),v]:(f.diets||[]).filter(d=>d!==v)})}/>{l}</label>);})}
               </div>
               <SectionTitle>Bilan sante initial</SectionTitle>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -930,16 +763,13 @@ export default function App() {
                 <FormSelect label="Moral (1 a 5)" value={form.moral} onChange={ff("moral")} options={[{v:"",l:"-"},{v:"1",l:"1 - Tres mauvais"},{v:"2",l:"2 - Mauvais"},{v:"3",l:"3 - Moyen"},{v:"4",l:"4 - Bon"},{v:"5",l:"5 - Excellent"}]}/>
                 <FormSelect label="Alimentation dominante" value={form.alimentation} onChange={ff("alimentation")} options={[{v:"",l:"-"},...Object.entries(ALIM_FR).map(([v,l])=>({v,l}))]}/>
               </div>
-              <div style={S.formGroup}><label style={S.label}>Resultats prise de sang</label><textarea style={{...S.textarea,minHeight:60}} value={form.prise_de_sang} onChange={e=>ff("prise_de_sang")(e.target.value)} placeholder="Ex: cholesterol 2.1, glycemie 0.95, ferritine 45..."/></div>
+              <div style={S.formGroup}><label style={S.label}>Resultats prise de sang</label><textarea style={{...S.textarea,minHeight:60}} value={form.prise_de_sang} onChange={e=>ff("prise_de_sang")(e.target.value)} placeholder="Ex: cholesterol 2.1, glycemie 0.95..."/></div>
               <SectionTitle>Informations medicales</SectionTitle>
               <div style={S.formGroup}><label style={S.label}>Antecedents / pathologies</label><textarea style={S.textarea} value={form.antecedents} onChange={e=>ff("antecedents")(e.target.value)} placeholder="Ex: hypertension, diabete type 2..."/></div>
               <div style={S.formGroup}><label style={S.label}>Allergies alimentaires</label><textarea style={{...S.textarea,minHeight:55}} value={form.allergies} onChange={e=>ff("allergies")(e.target.value)} placeholder="Ex: arachides, fruits a coque..."/></div>
               <div style={S.formGroup}><label style={S.label}>Notes</label><textarea style={S.textarea} value={form.notes} onChange={e=>ff("notes")(e.target.value)} placeholder="Observations, motivations..."/></div>
             </div>
-            <div style={S.modalFooter}>
-              <button style={S.btn("secondary")} onClick={closeModal}>Annuler</button>
-              <button style={S.btn("primary")} onClick={savePatient} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
-            </div>
+            <div style={S.modalFooter}><button style={S.btn("secondary")} onClick={closeModal}>Annuler</button><button style={S.btn("primary")} onClick={savePatient} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button></div>
           </div>
         </div>
       )}
@@ -947,34 +777,17 @@ export default function App() {
       {modal==="rdv"&&(
         <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div style={{...S.modal,maxWidth:480}}>
-            <div style={S.modalHeader}>
-              <div style={S.modalTitle}>Nouveau rendez-vous</div>
-              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
-            </div>
+            <div style={S.modalHeader}><div style={S.modalTitle}>Nouveau rendez-vous</div><button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button></div>
             <div style={S.modalBody}>
-              <div style={S.formGroup}>
-                <label style={S.label}>Patient *</label>
-                <select style={S.input} value={rdvForm.patient_id} onChange={e=>setRdvForm(f=>({...f,patient_id:e.target.value}))}>
-                  <option value="">Selectionnez un patient</option>
-                  {patients.map(p=><option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}
-                </select>
-              </div>
+              <div style={S.formGroup}><label style={S.label}>Patient *</label><select style={S.input} value={rdvForm.patient_id} onChange={e=>setRdvForm(f=>({...f,patient_id:e.target.value}))}><option value="">Selectionnez un patient</option>{patients.map(p=><option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <FormInput label="Date *" type="date" value={rdvForm.date} onChange={v=>setRdvForm(f=>({...f,date:v}))}/>
                 <FormInput label="Heure *" type="time" value={rdvForm.heure} onChange={v=>setRdvForm(f=>({...f,heure:v}))}/>
               </div>
-              <div style={S.formGroup}>
-                <label style={S.label}>Duree (minutes)</label>
-                <select style={S.input} value={rdvForm.duree} onChange={e=>setRdvForm(f=>({...f,duree:+e.target.value}))}>
-                  {[30,45,60,90,120].map(d=><option key={d} value={d}>{d} min</option>)}
-                </select>
-              </div>
-              <div style={S.formGroup}><label style={S.label}>Note (optionnel)</label><textarea style={{...S.textarea,minHeight:80}} value={rdvForm.note} onChange={e=>setRdvForm(f=>({...f,note:e.target.value}))} placeholder="Ex: premiere consultation, suivi mensuel..."/></div>
+              <div style={S.formGroup}><label style={S.label}>Duree</label><select style={S.input} value={rdvForm.duree} onChange={e=>setRdvForm(f=>({...f,duree:+e.target.value}))}>{[30,45,60,90,120].map(d=><option key={d} value={d}>{d} min</option>)}</select></div>
+              <div style={S.formGroup}><label style={S.label}>Note (optionnel)</label><textarea style={{...S.textarea,minHeight:80}} value={rdvForm.note} onChange={e=>setRdvForm(f=>({...f,note:e.target.value}))} placeholder="Ex: premiere consultation..."/></div>
             </div>
-            <div style={S.modalFooter}>
-              <button style={S.btn("secondary")} onClick={closeModal}>Annuler</button>
-              <button style={S.btn("primary")} onClick={saveRDV} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
-            </div>
+            <div style={S.modalFooter}><button style={S.btn("secondary")} onClick={closeModal}>Annuler</button><button style={S.btn("primary")} onClick={saveRDV} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button></div>
           </div>
         </div>
       )}
@@ -997,21 +810,21 @@ export default function App() {
                     <div onClick={()=>setPlanMode("ai")} style={{background:"white",border:"2px solid #E8DDD0",borderRadius:14,padding:20,cursor:"pointer",textAlign:"center"}}>
                       <div style={{fontSize:32,marginBottom:8}}>✦</div>
                       <div style={{fontSize:14,fontWeight:600,color:"#2A2118",marginBottom:4}}>Genere par l'IA</div>
-                      <div style={{fontSize:11,color:"#8A7968",lineHeight:1.4}}>L'IA cree le plan selon le profil</div>
+                      <div style={{fontSize:11,color:"#8A7968",lineHeight:1.4}}>L'IA cree le plan avec grammages</div>
                     </div>
-                    <div onClick={()=>{setManualDays(emptyManualPlan(planDuration==="7j"?7:3));setManualTips("");setPlanMode("manual");}} style={{background:"white",border:"2px solid #E8DDD0",borderRadius:14,padding:20,cursor:"pointer",textAlign:"center"}}>
+                    <div onClick={()=>{setManualDays(emptyPlan(planDuration));setManualTips("");setPlanMode("manual");}} style={{background:"white",border:"2px solid #E8DDD0",borderRadius:14,padding:20,cursor:"pointer",textAlign:"center"}}>
                       <div style={{fontSize:32,marginBottom:8}}>✏️</div>
                       <div style={{fontSize:14,fontWeight:600,color:"#2A2118",marginBottom:4}}>Saisie manuelle</div>
-                      <div style={{fontSize:11,color:"#8A7968",lineHeight:1.4}}>Vous choisissez chaque repas</div>
+                      <div style={{fontSize:11,color:"#8A7968",lineHeight:1.4}}>Vous saisissez repas et grammages</div>
                     </div>
                   </div>
                   <p style={{fontSize:11,color:"#8A7968",textAlign:"center",marginBottom:10}}>Duree du plan :</p>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                    {[["3j","📅","3 jours","Demarrage rapide"],["7j","🗓️","1 semaine","Plan complet"]].map(([v,ic,l,s])=>(
-                      <div key={v} onClick={()=>setPlanDuration(v)} style={{background:planDuration===v?"rgba(196,149,106,0.07)":"white",border:"2px solid "+(planDuration===v?"#C4956A":"#E8DDD0"),borderRadius:12,padding:16,cursor:"pointer",textAlign:"center"}}>
-                        <div style={{fontSize:26,marginBottom:6}}>{ic}</div>
-                        <div style={{fontSize:14,fontWeight:600,color:"#2A2118"}}>{l}</div>
-                        <div style={{fontSize:11,color:"#8A7968",marginTop:2}}>{s}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+                    {PLAN_DURATIONS.map(([v,ic,l,s])=>(
+                      <div key={v} onClick={()=>setPlanDuration(v)} style={{background:planDuration===v?"rgba(196,149,106,0.07)":"white",border:"2px solid "+(planDuration===v?"#C4956A":"#E8DDD0"),borderRadius:12,padding:14,cursor:"pointer",textAlign:"center"}}>
+                        <div style={{fontSize:24,marginBottom:5}}>{ic}</div>
+                        <div style={{fontSize:13,fontWeight:600,color:"#2A2118"}}>{l}</div>
+                        <div style={{fontSize:10,color:"#8A7968",marginTop:2}}>{s}</div>
                       </div>
                     ))}
                   </div>
@@ -1019,26 +832,19 @@ export default function App() {
               )}
               {planMode==="ai"&&planState==="idle"&&(
                 <div>
-                  <p style={{fontSize:13,color:"#8A7968",marginBottom:16}}>Plan IA - {planDuration==="7j"?"7 jours":"3 jours"}</p>
-                  <div style={S.formGroup}><label style={S.label}>Instructions speciales (optionnel)</label><textarea style={S.textarea} value={planInstr} onChange={e=>setPlanInstr(e.target.value)} placeholder="Ex: repas rapides, budget limite..."/></div>
+                  <p style={{fontSize:13,color:"#8A7968",marginBottom:16}}>Plan IA - {planDuration==="journee"?"Journee type":planDuration==="7j"?"7 jours":"3 jours"}</p>
+                  <div style={S.formGroup}><label style={S.label}>Instructions speciales (optionnel)</label><textarea style={S.textarea} value={planInstr} onChange={e=>setPlanInstr(e.target.value)} placeholder="Ex: repas rapides, budget limite, cuisine mediterraneenne..."/></div>
                 </div>
               )}
               {planMode==="ai"&&planState==="loading"&&(
                 <div style={{textAlign:"center",padding:"50px 20px"}}>
                   <style>{"@keyframes bounce{0%,80%,100%{transform:scale(0.6);opacity:0.4}40%{transform:scale(1);opacity:1}}"}</style>
-                  <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:20}}>
-                    {[0,200,400].map((d,i)=><div key={i} style={{width:10,height:10,borderRadius:"50%",background:"#C4956A",animation:"bounce 1.2s "+d+"ms infinite ease-in-out"}}/>)}
-                  </div>
-                  <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#8A7968"}}>L'IA genere votre plan...</div>
+                  <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:20}}>{[0,200,400].map((d,i)=><div key={i} style={{width:10,height:10,borderRadius:"50%",background:"#C4956A",animation:"bounce 1.2s "+d+"ms infinite ease-in-out"}}/>)}</div>
+                  <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#8A7968"}}>L'IA genere votre plan avec grammages...</div>
                 </div>
               )}
-              {planMode==="ai"&&planState==="error"&&(
-                <div style={{textAlign:"center",padding:"30px 20px"}}>
-                  <div style={{fontSize:32,marginBottom:12}}>⚠️</div>
-                  <div style={{color:"#c8503c",fontSize:14}}>{planError}</div>
-                </div>
-              )}
-              {planMode==="manual"&&planState==="idle"&&<ManualPlanEditor days={manualDays} tips={manualTips} onDaysChange={setManualDays} onTipsChange={setManualTips}/>}
+              {planMode==="ai"&&planState==="error"&&(<div style={{textAlign:"center",padding:"30px 20px"}}><div style={{fontSize:32,marginBottom:12}}>⚠️</div><div style={{color:"#c8503c",fontSize:14}}>{planError}</div></div>)}
+              {planMode==="manual"&&planState==="idle"&&<PlanEditor days={manualDays} tips={manualTips} onDaysChange={setManualDays} onTipsChange={setManualTips}/>}
               {planState==="done"&&planResult&&(
                 <div style={{maxHeight:"52vh",overflowY:"auto",paddingRight:4}}>
                   <PlanDays days={planResult.days}/>
@@ -1061,17 +867,9 @@ export default function App() {
       {modal==="note"&&(
         <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div style={{...S.modal,maxWidth:480}}>
-            <div style={S.modalHeader}>
-              <div style={S.modalTitle}>Ajouter une note</div>
-              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
-            </div>
-            <div style={S.modalBody}>
-              <div style={S.formGroup}><label style={S.label}>Note de consultation</label><textarea style={{...S.textarea,minHeight:120}} value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Observations lors de la consultation..."/></div>
-            </div>
-            <div style={S.modalFooter}>
-              <button style={S.btn("secondary")} onClick={closeModal}>Annuler</button>
-              <button style={S.btn("primary")} onClick={saveNote} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
-            </div>
+            <div style={S.modalHeader}><div style={S.modalTitle}>Ajouter une note</div><button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button></div>
+            <div style={S.modalBody}><div style={S.formGroup}><label style={S.label}>Note de consultation</label><textarea style={{...S.textarea,minHeight:120}} value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Observations lors de la consultation..."/></div></div>
+            <div style={S.modalFooter}><button style={S.btn("secondary")} onClick={closeModal}>Annuler</button><button style={S.btn("primary")} onClick={saveNote} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button></div>
           </div>
         </div>
       )}

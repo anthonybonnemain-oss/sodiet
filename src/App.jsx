@@ -29,7 +29,11 @@ const db = {
   getPoids: (pid, token) => supaFetch("poids_historique?patient_id=eq." + pid + "&order=date.asc", { token }),
   addPoids: (p, token) => supaFetch("poids_historique", { method: "POST", body: p, token }),
   deletePoids: (id, token) => supaFetch("poids_historique?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
+getRDV: (token) => supaFetch("rendez_vous?select=*,patients(prenom,nom)&order=date.asc,heure.asc", { token }),
+  addRDV: (r, token) => supaFetch("rendez_vous", { method: "POST", body: r, token }),
+  deleteRDV: (id, token) => supaFetch("rendez_vous?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
 };
+
 
 const COLORS = ["#C4956A","#3D5A47","#7A9E7E","#8B5E3C","#5B7A8B","#9B6B8A","#6B8B6B"];
 const GOALS_FR = { perte_poids:"Perte de poids", reeducation:"Reeducation alimentaire", prise_masse:"Prise de masse", sante:"Sante generale", sport:"Performance sportive" };
@@ -482,10 +486,13 @@ export default function App() {
   const [manualTips, setManualTips] = useState("");
   const [noteText, setNoteText] = useState("");
   const [totalPlans, setTotalPlans] = useState(0);
+  const [rdvList, setRdvList] = useState([]);
+const [loadingRDV, setLoadingRDV] = useState(false);
 
   const token = session?.access_token;
   const currentPatient = patients.find(p=>p.id===currentId);
   const ff = (k) => (v) => setForm(f=>({...f,[k]:v}));
+  const [rdvForm, setRdvForm] = useState({ patient_id:"", date:"", heure:"08:00", duree:60, note:"" });
 
   const handleLogin = async (email, password) => {
     setAuthLoading(true); setAuthError("");
@@ -514,9 +521,28 @@ export default function App() {
   .then(([plans,notes,poids])=>{ setProfilePlans(plans||[]); setProfileNotes(notes||[]); setProfilePoids(poids||[]); setProfileLoading(false); })
         .then(([plans,notes])=>{ setProfilePlans(plans||[]); setProfileNotes(notes||[]); setProfileLoading(false); })
         .catch(()=>setProfileLoading(false));
-    }
+    } useEffect(()=>{
+    if(!session) return;
+    setLoadingRDV(true);
+    db.getRDV(token).then(data=>{ setRdvList(data||[]); setLoadingRDV(false); }).catch(()=>setLoadingRDV(false));
+  },[session]);
   },[panel,currentId]);
+const saveRDV = async () => {
+    if(!rdvForm.patient_id||!rdvForm.date||!rdvForm.heure) { alert("Patient, date et heure requis"); return; }
+    setSaving(true);
+    try {
+      const [rdv] = await db.addRDV(rdvForm, token);
+      setRdvList(rs=>[...rs,rdv].sort((a,b)=>a.date+a.heure>b.date+b.heure?1:-1));
+      setRdvForm({ patient_id:"", date:"", heure:"08:00", duree:60, note:"" });
+      closeModal();
+    } catch(e) { alert("Erreur : "+e.message); }
+    setSaving(false);
+  };
 
+  const deleteRDV = async (id) => {
+    await db.deleteRDV(id, token);
+    setRdvList(rs=>rs.filter(r=>r.id!==id));
+  };
   const closeModal = () => {
     setModal(null); setPlanMode("choice"); setPlanState("idle");
     setPlanResult(null); setPlanInstr(""); setPlanDuration("3j");
@@ -619,7 +645,53 @@ const exportPatientPDF = (p, plans, notes, poidsData) => {
   };
 
   const filteredPatients=patients.filter(p=>(p.prenom+" "+p.nom).toLowerCase().includes(search.toLowerCase()));
-
+const AgendaView = () => {
+    const today = new Date().toISOString().split("T")[0];
+    const upcoming = rdvList.filter(r => r.date >= today);
+    const past = rdvList.filter(r => r.date < today);
+    return (
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+          <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Rendez-vous a venir</div>
+          <button style={S.btn("primary")} onClick={()=>setModal("rdv")}>+ Nouveau RDV</button>
+        </div>
+        {loadingRDV?<Spinner/>:upcoming.length===0
+          ?<div style={S.emptyState}><div style={{fontSize:40,marginBottom:12,opacity:.4}}>📅</div><div style={{fontFamily:"Georgia,serif",fontSize:19,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucun rendez-vous</div><div style={{fontSize:13}}>Ajoutez votre premier RDV</div></div>
+          :upcoming.map((r,i)=>(
+            <div key={i} style={{...S.infoCard,display:"flex",alignItems:"center",gap:16,padding:"16px 20px"}}>
+              <div style={{background:"#C4956A",color:"white",borderRadius:10,padding:"10px 14px",textAlign:"center",minWidth:56}}>
+                <div style={{fontSize:20,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
+                <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"1px"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,color:"#2A2118",fontSize:14}}>{r.patients?.prenom} {r.patients?.nom}</div>
+                <div style={{fontSize:12,color:"#8A7968",marginTop:2}}>{r.heure.slice(0,5)} — {r.duree} min{r.note?" · "+r.note:""}</div>
+              </div>
+              <button onClick={()=>deleteRDV(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:18}}>×</button>
+            </div>
+          ))
+        }
+        {past.length>0&&(
+          <div style={{marginTop:24}}>
+            <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#8A7968",marginBottom:12}}>Passes</div>
+            {past.reverse().map((r,i)=>(
+              <div key={i} style={{...S.infoCard,display:"flex",alignItems:"center",gap:16,padding:"12px 20px",opacity:0.6}}>
+                <div style={{background:"#8A7968",color:"white",borderRadius:10,padding:"8px 12px",textAlign:"center",minWidth:48}}>
+                  <div style={{fontSize:16,fontWeight:600}}>{new Date(r.date+"T00:00:00").getDate()}</div>
+                  <div style={{fontSize:9,textTransform:"uppercase"}}>{new Date(r.date+"T00:00:00").toLocaleDateString("fr-FR",{month:"short"})}</div>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:600,color:"#2A2118",fontSize:13}}>{r.patients?.prenom} {r.patients?.nom}</div>
+                  <div style={{fontSize:12,color:"#8A7968",marginTop:2}}>{r.heure.slice(0,5)} — {r.duree} min</div>
+                </div>
+                <button onClick={()=>deleteRDV(r.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:18}}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
   if(!session) return <LoginPage onLogin={handleLogin} error={authError} loading={authLoading}/>;
 
   return (
@@ -635,6 +707,7 @@ const exportPatientPDF = (p, plans, notes, poidsData) => {
           <div style={S.navLabel}>Menu</div>
           <div style={S.navItem(panel==="dashboard")} onClick={()=>setPanel("dashboard")}><span>⊞</span>Tableau de bord</div>
           <div style={S.navItem(panel==="patients"||panel==="profile")} onClick={()=>setPanel("patients")}><span>👥</span>Mes patients</div>
+  <div style={S.navItem(panel==="agenda")} onClick={()=>setPanel("agenda")}><span>📅</span>Agenda</div>
           {patients.length>0&&<>
             <div style={{...S.navLabel,marginTop:16}}>Patients recents</div>
             {patients.slice(0,8).map(p=>(
@@ -682,7 +755,7 @@ const exportPatientPDF = (p, plans, notes, poidsData) => {
               </div>
             </div>
           )}
-
+{panel==="agenda"&&<AgendaView/>}
           {panel==="patients"&&(
             <div>
               <div style={{position:"relative",marginBottom:24}}>
@@ -843,7 +916,43 @@ const exportPatientPDF = (p, plans, notes, poidsData) => {
           </div>
         </div>
       )}
-
+{modal==="rdv"&&(
+        <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
+          <div style={{...S.modal,maxWidth:480}}>
+            <div style={S.modalHeader}>
+              <div style={S.modalTitle}>Nouveau rendez-vous</div>
+              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
+            </div>
+            <div style={S.modalBody}>
+              <div style={S.formGroup}>
+                <label style={S.label}>Patient *</label>
+                <select style={S.input} value={rdvForm.patient_id} onChange={e=>setRdvForm(f=>({...f,patient_id:e.target.value}))}>
+                  <option value="">Selectionnez un patient</option>
+                  {patients.map(p=><option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}
+                </select>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <FormInput label="Date *" type="date" value={rdvForm.date} onChange={v=>setRdvForm(f=>({...f,date:v}))}/>
+                <FormInput label="Heure *" type="time" value={rdvForm.heure} onChange={v=>setRdvForm(f=>({...f,heure:v}))}/>
+              </div>
+              <div style={S.formGroup}>
+                <label style={S.label}>Duree (minutes)</label>
+                <select style={S.input} value={rdvForm.duree} onChange={e=>setRdvForm(f=>({...f,duree:+e.target.value}))}>
+                  {[30,45,60,90,120].map(d=><option key={d} value={d}>{d} min</option>)}
+                </select>
+              </div>
+              <div style={S.formGroup}>
+                <label style={S.label}>Note (optionnel)</label>
+                <textarea style={{...S.textarea,minHeight:80}} value={rdvForm.note} onChange={e=>setRdvForm(f=>({...f,note:e.target.value}))} placeholder="Ex: premiere consultation, suivi mensuel..."/>
+              </div>
+            </div>
+            <div style={S.modalFooter}>
+              <button style={S.btn("secondary")} onClick={closeModal}>Annuler</button>
+              <button style={S.btn("primary")} onClick={saveRDV} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {modal==="note"&&(
         <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div style={{...S.modal,maxWidth:480}}>

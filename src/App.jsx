@@ -239,8 +239,9 @@ function PlansSection({plans, loading, token, onNewPlan, onPlansChange}) {
 
 function PoidsChart({data, objectif}) {
   if(!data||data.length===0) return <p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune mesure. Ajoutez une mesure pour voir la courbe.</p>;
-const W=320,H=130,PL=35,PR=10,PT=10,PB=25,cw=W-PL-PR,ch=H-PT-PB;  const allW=objectif?[...weights,+objectif]:weights;
-  const minW=Math.min(...allW)-2,maxW=Math.max(...allW)+2,range=maxW-minW||1;
+const W=320,H=130,PL=35,PR=10,PT=10,PB=25;
+const cw=W-PL-PR,ch=H-PT-PB;
+const weights=data.map(d=>d.poids);  const minW=Math.min(...allW)-2,maxW=Math.max(...allW)+2,range=maxW-minW||1;
   const x=(i)=>PL+(i/(data.length-1||1))*cw;
   const y=(w)=>PT+ch-((w-minW)/range)*ch;
   const pathD=data.map((d,i)=>(i===0?"M":"L")+x(i).toFixed(1)+","+y(d.poids).toFixed(1)).join(" ");

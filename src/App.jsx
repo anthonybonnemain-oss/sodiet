@@ -715,8 +715,7 @@ useEffect(()=>{ if(panel==="profile"&&currentId&&token){ setProfileLoading(true)
               onGenPlan={()=>{setPlanMode("choice");setPlanState("idle");setPlanResult(null);setModal("plan");}}
               onAddNote={()=>setModal("note")}
               onConsultation={()=>setModal("consultation")}
-              onExportPDF={()=>exportPatientPDF(currentPatient,profilePlans,profileNotes)}
-              onPlansChange={setProfilePlans}
+onExportPDF={()=>exportPatientPDF(currentPatient,profilePlans,profileNotes,profilePoids,profileMensurations)}              onPlansChange={setProfilePlans}
             />
           )}
         </div>

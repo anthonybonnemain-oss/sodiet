@@ -239,8 +239,7 @@ function PlansSection({plans, loading, token, onNewPlan, onPlansChange}) {
 
 function PoidsChart({data, objectif}) {
   if(!data||data.length===0) return <p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune mesure. Ajoutez une mesure pour voir la courbe.</p>;
-const W=480,H=160,PL=40,PR=15,PT=15,PB=30,cw=W-PL-PR,ch=H-PT-PB;  const weights=data.map(d=>d.poids);
-  const allW=objectif?[...weights,+objectif]:weights;
+const W=320,H=130,PL=35,PR=10,PT=10,PB=25,cw=W-PL-PR,ch=H-PT-PB;  const allW=objectif?[...weights,+objectif]:weights;
   const minW=Math.min(...allW)-2,maxW=Math.max(...allW)+2,range=maxW-minW||1;
   const x=(i)=>PL+(i/(data.length-1||1))*cw;
   const y=(w)=>PT+ch-((w-minW)/range)*ch;
@@ -269,8 +268,7 @@ function MensurationsChart({data, type}) {
   const allVals=keys.flatMap(([k])=>data.map(d=>d[k]).filter(v=>v!=null));
   if(!allVals.length) return <p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune donnee disponible.</p>;
   const minV=Math.min(...allVals)-2,maxV=Math.max(...allVals)+2,range=maxV-minV||1;
-const W=480,H=160,PL=40,PR=15,PT=15,PB=30,cw=W-PL-PR,ch=H-PT-PB;  const x=(i,len)=>PL+(i/(len-1||1))*cw;
-  const y=(v)=>PT+ch-((v-minV)/range)*ch;
+const W=320,H=130,PL=35,PR=10,PT=10,PB=25,cw=W-PL-PR,ch=H-PT-PB;  const y=(v)=>PT+ch-((v-minV)/range)*ch;
   const yTicks=Array.from({length:5},(_,i)=>minV+(range/4)*i);
   return (
     <div>
@@ -347,14 +345,16 @@ function MensurationsSection({patientId, token}) {
           {data.length>=2&&(
             <div style={{marginBottom:16}}>
               <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:12}}>Evolution</div>
-              <div style={{background:"#FDFAF7",borderRadius:10,padding:12,marginBottom:12}}>
-                <div style={{fontSize:11,color:"#3D5A47",fontWeight:600,marginBottom:8}}>Mensurations (cm)</div>
-                <MensurationsChart data={data} type="mensurations"/>
-              </div>
-              <div style={{background:"#FDFAF7",borderRadius:10,padding:12}}>
-                <div style={{fontSize:11,color:"#3D5A47",fontWeight:600,marginBottom:8}}>Composition corporelle (%)</div>
-                <MensurationsChart data={data} type="composition"/>
-              </div>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+  <div style={{background:"#FDFAF7",borderRadius:10,padding:12}}>
+    <div style={{fontSize:11,color:"#3D5A47",fontWeight:600,marginBottom:8}}>Mensurations (cm)</div>
+    <MensurationsChart data={data} type="mensurations"/>
+  </div>
+  <div style={{background:"#FDFAF7",borderRadius:10,padding:12}}>
+    <div style={{fontSize:11,color:"#3D5A47",fontWeight:600,marginBottom:8}}>Composition corporelle (%)</div>
+    <MensurationsChart data={data} type="composition"/>
+  </div>
+</div>
             </div>
           )}
           <button style={{...S.btn("secondary"),fontSize:12,width:"100%",justifyContent:"center",marginBottom:14}} onClick={()=>setShowForm(!showForm)}>{showForm?"Fermer":"+ Ajouter une mensuration"}</button>

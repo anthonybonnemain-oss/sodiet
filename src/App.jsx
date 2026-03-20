@@ -630,7 +630,7 @@ useEffect(() => {
     const durLabel = isJournee?"Journee type":planDuration==="7j"?"7 jours":"3 jours";
     const prompt="Tu es un nutritionniste expert. Genere un plan alimentaire en JSON strict.\n\nProfil: "+p.prenom+", "+(p.sexe==="F"?"Femme":p.sexe==="H"?"Homme":"N/A")+", "+(p.taille||"?")+"cm, "+(p.poids||"?")+"kg, objectif "+(p.poids_obj||"?")+"kg, "+(GOALS_FR[p.objectif]||"?")+", "+(ACTIVITE_FR[p.activite]||"?")+", regime: "+dietStr+", allergies: "+(p.allergies||"aucune")+"."+(planInstr?" Instructions: "+planInstr+".":"")+"\n\nReponds UNIQUEMENT avec ce JSON (rien d'autre, pas de backticks) pour "+(isJournee?"une journee type":daysCount+" jours")+". Pour chaque repas, inclure le grammage/quantite recommande. Sois CONCIS (max 20 mots par repas):\n{\"days\":[{\"label\":\""+(isJournee?"Journee type":"Jour 1")+"\",\"meals\":[{\"name\":\"Petit-dejeuner\",\"content\":\"description\",\"grammage\":\"ex: 150g yaourt, 40g granola\"},{\"name\":\"Dejeuner\",\"content\":\"description\",\"grammage\":\"ex: 150g poulet, 80g riz\"},{\"name\":\"Collation\",\"content\":\"description\",\"grammage\":\"ex: 1 pomme, 30g amandes\"},{\"name\":\"Diner\",\"content\":\"description\",\"grammage\":\"ex: 180g saumon, 200g legumes\"}]}],\"tips\":\"Un conseil court.\"}";
     try{
-      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:prompt}]})});
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true","x-api-key":"sk-ant-api03--uA...8wAA"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:prompt}]})});
       if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||"HTTP "+res.status);}
       const data=await res.json();
       const raw=(data.content||[]).map(c=>c.text||"").join("");
@@ -674,11 +674,11 @@ const lines=(result.days||[]).flatMap(day=>["\n== "+day.label+" ==",...(day.meal
 
   if(!session) return <LoginPage onLogin={handleLogin} error={authError} loading={authLoading}/>;
 
-  const PLAN_DURATIONS = [
+const PLAN_DURATIONS = [
     ["journee","☀️","Journee type","Modele de journee ideale"],
-    ["3j","📅","3 jours","Demarrage rapide"],
     ["7j","🗓️","1 semaine","Plan complet"],
   ];
+
 
   return (
     <div style={S.app}>

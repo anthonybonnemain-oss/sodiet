@@ -305,7 +305,7 @@ function PoidsSection({patientId, objectif, token}) {
       {loading?<Spinner/>:(
         <>
           {poidsData.length>=2&&(<div style={{display:"flex",gap:12,marginBottom:16}}>{[["Debut",poidsData[0].poids+"kg"],["Actuel",poidsData[poidsData.length-1].poids+"kg"],["Evolution",(poidsDiff>0?"+":"")+poidsDiff+"kg"],["Objectif",objectif?objectif+"kg":"-"]].map(([k,v])=>(<div key={k} style={{flex:1,background:"#F0EBE1",borderRadius:10,padding:"10px 14px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:600,color:k==="Evolution"?(poidsDiff<=0?"#3D5A47":"#c8503c"):"#2A2118"}}>{v}</div><div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:2}}>{k}</div></div>))}</div>)}
-          <div style={{marginBottom:16,background:"#FDFAF7",borderRadius:10,padding:12}}><PoidsChart data={poidsData} objectif={objectif}/></div>
+          <div style={{marginBottom:16,background:"#FDFAF7",borderRadius:10,padding:12,maxWidth:400}}><PoidsChart data={poidsData} objectif={objectif}/></div>
           <div style={{borderTop:"1px solid #F0EBE1",paddingTop:14,marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>Ajouter une mesure</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr auto",gap:8,alignItems:"end"}}>

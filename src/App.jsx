@@ -338,7 +338,51 @@ function PoidsSection({patientId, objectif, token}) {
     </div>
   );
 }
+function MensurationsChart({data, type}) {
+  if(!data||data.length<2) return <p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Minimum 2 mesures necessaires pour afficher le graphique.</p>;
 
+  const keys = type==="mensurations"
+    ? [["nombril","#C4956A"],["hanche","#3D5A47"],["cuisse_d","#7A9E7E"],["bras_d","#8B5E3C"]]
+    : [["masse_grasse","#c8503c"],["masse_musculaire","#3D5A47"],["masse_hydrique","#5B7A8B"]];
+
+  const labels = {nombril:"Nombril",hanche:"Hanche",cuisse_d:"Cuisse D",bras_d:"Bras D",masse_grasse:"Masse grasse",masse_musculaire:"Masse musc.",masse_hydrique:"Masse hydrique"};
+  const units = type==="mensurations"?"cm":"%";
+
+  const filtered = keys.map(([k,c])=>({key:k,color:c,values:data.map(d=>d[k]).filter(v=>v!=null)}));
+  const hasData = filtered.some(f=>f.values.length>0);
+  if(!hasData) return <p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune donnee disponible.</p>;
+
+  const allVals = filtered.flatMap(f=>data.map(d=>d[f.key]).filter(v=>v!=null));
+  const minV=Math.min(...allVals)-2, maxV=Math.max(...allVals)+2, range=maxV-minV||1;
+
+  const W=580,H=200,PL=45,PR=20,PT=20,PB=35;
+  const cw=W-PL-PR,ch=H-PT-PB;
+  const x=(i,len)=>PL+(i/(len-1||1))*cw;
+  const y=(v)=>PT+ch-((v-minV)/range)*ch;
+  const yTicks=Array.from({length:5},(_,i)=>minV+(range/4)*i);
+
+  return (
+    <div>
+      <svg viewBox={"0 0 "+W+" "+H} style={{width:"100%",height:"auto"}}>
+        {yTicks.map((t,i)=>(<g key={i}><line x1={PL} y1={y(t).toFixed(1)} x2={W-PR} y2={y(t).toFixed(1)} stroke="#F0EBE1" strokeWidth="1"/><text x={PL-6} y={y(t)+4} textAnchor="end" fontSize="9" fill="#8A7968">{t.toFixed(1)}</text></g>))}
+        {filtered.map(({key,color})=>{
+          const pts=data.map((d,i)=>({v:d[key],i})).filter(p=>p.v!=null);
+          if(pts.length<2) return null;
+          const pathD=pts.map((p,j)=>(j===0?"M":"L")+x(p.i,data.length).toFixed(1)+","+y(p.v).toFixed(1)).join(" ");
+          return <path key={key} d={pathD} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>;
+        })}
+        {filtered.map(({key,color})=>{
+          const pts=data.map((d,i)=>({v:d[key],i})).filter(p=>p.v!=null);
+          return pts.map((p,j)=>(<circle key={key+j} cx={x(p.i,data.length).toFixed(1)} cy={y(p.v).toFixed(1)} r="3" fill="white" stroke={color} strokeWidth="2"/>));
+        })}
+        {data.map((d,i)=>(<text key={i} x={x(i,data.length).toFixed(1)} y={H-8} textAnchor="middle" fontSize="8" fill="#8A7968">{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})}</text>))}
+      </svg>
+      <div style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:8}}>
+        {filtered.map(({key,color})=>(<div key={key} style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}><div style={{width:12,height:3,background:color,borderRadius:2}}/><span style={{color:"#8A7968"}}>{labels[key]} ({units})</span></div>))}
+      </div>
+    </div>
+  );
+}
 function MensurationsSection({patientId, token}) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -395,6 +439,19 @@ function MensurationsSection({patientId, token}) {
               <button style={S.btn("primary")} onClick={addMens} disabled={saving}>{saving?"Enregistrement...":"Enregistrer"}</button>
             </div>
           </div>)}
+          {data.length>=2&&(
+  <div style={{marginBottom:16}}>
+    <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:12}}>Evolution des mensurations</div>
+    <div style={{background:"#FDFAF7",borderRadius:10,padding:12,marginBottom:12}}>
+      <div style={{fontSize:11,color:"#3D5A47",fontWeight:600,marginBottom:8}}>Mensurations (cm)</div>
+      <MensurationsChart data={data} type="mensurations"/>
+    </div>
+    <div style={{background:"#FDFAF7",borderRadius:10,padding:12}}>
+      <div style={{fontSize:11,color:"#3D5A47",fontWeight:600,marginBottom:8}}>Composition corporelle (%)</div>
+      <MensurationsChart data={data} type="composition"/>
+    </div>
+  </div>
+)}
           {data.length>0&&(<div><div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Historique</div><div style={{maxHeight:200,overflowY:"auto"}}>{[...data].reverse().map((d,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #F0EBE1",fontSize:12}}><span style={{color:"#8A7968",minWidth:100}}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"})}</span><div style={{display:"flex",gap:12,flex:1,flexWrap:"wrap"}}>{[["Nombril",d.nombril,"cm"],["Hanche",d.hanche,"cm"],["Cuisse",d.cuisse_d,"cm"],["Bras",d.bras_d,"cm"],["MG",d.masse_grasse,"%"],["MH",d.masse_hydrique,"%"],["MM",d.masse_musculaire,"%"],["IMC",d.imc,""]].filter(([,v])=>v).map(([k,v,u])=>(<span key={k}><span style={{color:"#8A7968"}}>{k}:</span> {v}{u}</span>))}</div><button onClick={()=>deleteMens(d.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:16,padding:"0 4px",flexShrink:0}}>x</button></div>))}</div></div>)}
           {data.length===0&&!showForm&&<p style={{fontSize:12,color:"#8A7968",fontStyle:"italic"}}>Aucune mensuration. Cliquez sur "+ Ajouter".</p>}
         </>

@@ -835,7 +835,7 @@ const PLAN_DURATIONS = [
                     </div>
                   </div>
                   <p style={{fontSize:11,color:"#8A7968",textAlign:"center",marginBottom:10}}>Duree du plan :</p>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+                  <div style={{display:"flex",justifyContent:"center",gap:12}}>
                     {PLAN_DURATIONS.map(([v,ic,l,s])=>(
                       <div key={v} onClick={()=>setPlanDuration(v)} style={{background:planDuration===v?"rgba(196,149,106,0.07)":"white",border:"2px solid "+(planDuration===v?"#C4956A":"#E8DDD0"),borderRadius:12,padding:14,cursor:"pointer",textAlign:"center"}}>
                         <div style={{fontSize:24,marginBottom:5}}>{ic}</div>

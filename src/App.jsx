@@ -402,7 +402,79 @@ function MensurationsSection({patientId, token}) {
     </div>
   );
 }
+function ConsultationModal({patient, token, onSave}) {
+  const [poids, setPoids] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [sommeil, setSommeil] = useState("");
+  const [transit, setTransit] = useState("");
+  const [moral, setMoral] = useState("");
+  const [noteText, setNoteText] = useState("");
+  const [mens, setMens] = useState({nombril:"",hanche:"",cuisse_d:"",bras_d:"",masse_grasse:"",masse_hydrique:"",masse_musculaire:"",imc:""});
+  const [showMens, setShowMens] = useState(false);
+  const [saving, setSaving] = useState(false);
 
+  const save = async () => {
+    setSaving(true);
+    try {
+      const promises = [];
+      if(poids) promises.push(db.addPoids({patient_id:patient.id,poids:+poids,date,note:null},token));
+      if(Object.values(mens).some(v=>v)) promises.push(db.addMensuration({patient_id:patient.id,date,nombril:mens.nombril?+mens.nombril:null,hanche:mens.hanche?+mens.hanche:null,cuisse_d:mens.cuisse_d?+mens.cuisse_d:null,bras_d:mens.bras_d?+mens.bras_d:null,masse_grasse:mens.masse_grasse?+mens.masse_grasse:null,masse_hydrique:mens.masse_hydrique?+mens.masse_hydrique:null,masse_musculaire:mens.masse_musculaire?+mens.masse_musculaire:null,imc:mens.imc?+mens.imc:null},token));
+      const noteContent = [
+        noteText,
+        sommeil?"Sommeil : "+(SOMMEIL_FR[sommeil]||sommeil):"",
+        transit?"Transit : "+(TRANSIT_FR[transit]||transit):"",
+        moral?"Moral : "+moral+"/5":""
+      ].filter(Boolean).join("\n");
+      if(noteContent.trim()) promises.push(db.addNote({patient_id:patient.id,text:noteContent},token));
+      const results = await Promise.all(promises);
+      const note = results.find(r=>Array.isArray(r)&&r[0]?.text)?.[0] || {date:new Date().toISOString(),text:noteContent};
+      onSave({note});
+    } catch(e){alert("Erreur : "+e.message);}
+    setSaving(false);
+  };
+
+  return (
+    <>
+      <div style={S.modalBody}>
+        <div style={{fontSize:12,color:"#8A7968",marginBottom:16}}>Date de la consultation :</div>
+        <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...S.input,marginBottom:20,width:"100%",boxSizing:"border-box"}}/>
+        <SectionTitle>Poids du jour</SectionTitle>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:4}}>
+          <div style={S.formGroup}><label style={S.label}>Poids (kg)</label><input type="number" step="0.1" value={poids} onChange={e=>setPoids(e.target.value)} placeholder="72.5" style={S.input}/></div>
+        </div>
+        <SectionTitle>Bilan du jour</SectionTitle>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+          <FormSelect label="Sommeil" value={sommeil} onChange={setSommeil} options={[{v:"",l:"-"},...Object.entries(SOMMEIL_FR).map(([v,l])=>({v,l}))]}/>
+          <FormSelect label="Transit" value={transit} onChange={setTransit} options={[{v:"",l:"-"},...Object.entries(TRANSIT_FR).map(([v,l])=>({v,l}))]}/>
+          <FormSelect label="Moral (1 a 5)" value={moral} onChange={setMoral} options={[{v:"",l:"-"},{v:"1",l:"1 - Tres mauvais"},{v:"2",l:"2 - Mauvais"},{v:"3",l:"3 - Moyen"},{v:"4",l:"4 - Bon"},{v:"5",l:"5 - Excellent"}]}/>
+        </div>
+        <SectionTitle>Notes de consultation</SectionTitle>
+        <textarea style={{...S.textarea,width:"100%",minHeight:100,boxSizing:"border-box"}} value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Observations, ressentis du patient, conseils donnes..."/>
+        <div style={{marginTop:16}}>
+          <button style={{...S.btn("secondary"),fontSize:12,width:"100%",justifyContent:"center"}} onClick={()=>setShowMens(!showMens)}>
+            {showMens?"Masquer les mensurations":"+ Ajouter des mensurations (optionnel)"}
+          </button>
+        </div>
+        {showMens&&(
+          <div style={{marginTop:14}}>
+            <div style={{fontSize:11,fontWeight:600,color:"#3D5A47",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Mensurations (cm)</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
+              {[["Nombril","nombril"],["Hanche","hanche"],["Cuisse D","cuisse_d"],["Bras D","bras_d"]].map(([l,k])=>(<div key={k} style={S.formGroup}><label style={S.label}>{l}</label><input type="number" step="0.1" value={mens[k]} onChange={e=>setMens(m=>({...m,[k]:e.target.value}))} placeholder="0" style={S.input}/></div>))}
+            </div>
+            <div style={{fontSize:11,fontWeight:600,color:"#3D5A47",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Composition corporelle</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+              {[["MG %","masse_grasse"],["MH %","masse_hydrique"],["MM %","masse_musculaire"],["IMC","imc"]].map(([l,k])=>(<div key={k} style={S.formGroup}><label style={S.label}>{l}</label><input type="number" step="0.1" value={mens[k]} onChange={e=>setMens(m=>({...m,[k]:e.target.value}))} placeholder="0" style={S.input}/></div>))}
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={S.modalFooter}>
+        <button style={S.btn("secondary")} onClick={()=>{}}>Annuler</button>
+        <button style={S.btn("primary")} onClick={save} disabled={saving}>{saving?"Enregistrement...":"Enregistrer la consultation"}</button>
+      </div>
+    </>
+  );
+}
 function AgendaView({rdvList, loadingRDV, patients, onAddRDV, onDeleteRDV}) {
   const today = new Date().toISOString().split("T")[0];
   const upcoming = rdvList.filter(r=>r.date>=today);
@@ -470,8 +542,7 @@ function PatientCard({p,onClick}) {
   );
 }
 
-function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAddNote,onExportPDF,onPlansChange,loading}) {
-  const bmi=calcBMI(p.poids,p.taille);
+function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAddNote,onConsultation,onExportPDF,onPlansChange,loading}) {  const bmi=calcBMI(p.poids,p.taille);
   const moralEmojis=["","😞","😕","😐","🙂","😄"];
   return (
     <div>
@@ -487,8 +558,8 @@ function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAdd
           </div>
         </div>
         <div style={{display:"flex",gap:8,flexShrink:0}}>
-          <button style={S.btn("secondary")} onClick={onEdit}>Modifier</button>
-        </div>
+<button style={S.btn("secondary")} onClick={onEdit}>Modifier</button>
+<button style={S.btn("primary")} onClick={onConsultation}>+ Consultation</button>        </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:22}}>
         <div>
@@ -748,8 +819,8 @@ const PLAN_DURATIONS = [
               onEdit={()=>{setForm({...EMPTY_FORM,...currentPatient,poids_obj:currentPatient.poids_obj||"",moral:currentPatient.moral||""});setEditId(currentPatient.id);setModal("patient");}}
               onDelete={()=>deletePatient(currentPatient.id)}
               onGenPlan={()=>{setPlanMode("choice");setPlanState("idle");setPlanResult(null);setModal("plan");}}
-              onAddNote={()=>setModal("note")}
-              onExportPDF={()=>exportPatientPDF(currentPatient,profilePlans,profileNotes)}
+onAddNote={()=>setModal("note")}
+onConsultation={()=>setModal("consultation")}              onExportPDF={()=>exportPatientPDF(currentPatient,profilePlans,profileNotes)}
               onPlansChange={setProfilePlans}
             />
           )}
@@ -891,7 +962,20 @@ const PLAN_DURATIONS = [
           </div>
         </div>
       )}
-
+{modal==="consultation"&&(
+        <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
+          <div style={{...S.modal,maxWidth:600}}>
+            <div style={S.modalHeader}>
+              <div style={S.modalTitle}>Consultation — {currentPatient?.prenom} {currentPatient?.nom}</div>
+              <button onClick={closeModal} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#E8DDD0",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
+            </div>
+            <ConsultationModal patient={currentPatient} token={token} onSave={(data)=>{
+              setProfileNotes(ns=>[data.note,...ns]);
+              closeModal();
+            }}/>
+          </div>
+        </div>
+      )}
       {modal==="note"&&(
         <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&closeModal()}>
           <div style={{...S.modal,maxWidth:480}}>

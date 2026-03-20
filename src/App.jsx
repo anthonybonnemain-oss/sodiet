@@ -52,7 +52,20 @@ const avatarColor = (id) => COLORS[Math.abs((id||"").toString().split("").reduce
 const initials = (p) => ((p.prenom||"?")[0]+(p.nom||"?")[0]).toUpperCase();
 const getAge = (ddn) => { if(!ddn) return "-"; const d=Math.floor((Date.now()-new Date(ddn))/(365.25*24*3600*1000)); return d+" ans"; };
 const calcBMI = (p,t) => { if(!p||!t) return "-"; return (p/Math.pow(t/100,2)).toFixed(1); };
-
+const calcMB = (p) => {
+  if(!p.poids||!p.taille||!p.ddn||!p.sexe) return null;
+  const age = Math.floor((Date.now()-new Date(p.ddn))/(365.25*24*3600*1000));
+  const mb = p.sexe==="F"
+    ? (10*p.poids)+(6.25*p.taille)-(5*age)-161
+    : (10*p.poids)+(6.25*p.taille)-(5*age)+5;
+  return Math.round(mb);
+};
+const ACTIVITE_COEF = { sedentaire:1.2, leger:1.375, modere:1.55, actif:1.725, sport_intense:1.9 };
+const calcDET = (p) => {
+  const mb = calcMB(p);
+  if(!mb||!p.activite) return null;
+  return Math.round(mb * (ACTIVITE_COEF[p.activite]||1.2));
+};
 const emptyMeal = (name) => ({ name, content:"", grammage:"" });
 const emptyDay = (i) => ({ label: i===0&&i===0 ? "Journee type" : "Jour "+(i+1), meals: MEAL_NAMES.map(emptyMeal) });
 const emptyPlan = (dur) => {
@@ -481,10 +494,9 @@ function ProfileView({p,plans,notes,token,onBack,onEdit,onDelete,onGenPlan,onAdd
         <div>
           <div style={S.infoCard}>
             <div style={S.infoTitle}>Morphologie</div>
-            {[["Taille",p.taille?p.taille+" cm":"-"],["Poids initial",p.poids?p.poids+" kg":"-"],["Poids objectif",p.poids_obj?p.poids_obj+" kg":"-"],["IMC",bmi]].map(([k,v])=>(<div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500}}>{v}</span></div>))}
+{[["Taille",p.taille?p.taille+" cm":"-"],["Poids initial",p.poids?p.poids+" kg":"-"],["Poids objectif",p.poids_obj?p.poids_obj+" kg":"-"],["IMC",bmi],["Metabolisme de base",calcMB(p)?calcMB(p)+" kcal/j":"-"],["Depenses totales",calcDET(p)?calcDET(p)+" kcal/j":"-"]].map(([k,v])=>(<div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500}}>{v}</span></div>))}
           </div>
-          <div style={S.infoCard}>
-            <div style={S.infoTitle}>Mode de vie</div>
+          <div style={S.infoCard}>            <div style={S.infoTitle}>Mode de vie</div>
             {[["Activite",ACTIVITE_FR[p.activite]||"-"],["Objectif",GOALS_FR[p.objectif]||"-"]].map(([k,v])=>(<div key={k} style={S.infoRow}><span style={{color:"#8A7968"}}>{k}</span><span style={{fontWeight:500}}>{v}</span></div>))}
             {p.allergies&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Allergies</span><span style={{fontWeight:500,fontSize:12,textAlign:"right",maxWidth:160}}>{p.allergies}</span></div>}
             {p.antecedents&&<div style={S.infoRow}><span style={{color:"#8A7968"}}>Antecedents</span><span style={{fontWeight:500,fontSize:12,textAlign:"right",maxWidth:160}}>{p.antecedents}</span></div>}

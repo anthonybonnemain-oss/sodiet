@@ -304,18 +304,24 @@ function PoidsSection({patientId, objectif, token}) {
     <div>
       {loading?<Spinner/>:(
         <>
-          {poidsData.length>=2&&(<div style={{display:"flex",gap:12,marginBottom:16}}>{[["Debut",poidsData[0].poids+"kg"],["Actuel",poidsData[poidsData.length-1].poids+"kg"],["Evolution",(poidsDiff>0?"+":"")+poidsDiff+"kg"],["Objectif",objectif?objectif+"kg":"-"]].map(([k,v])=>(<div key={k} style={{flex:1,background:"#F0EBE1",borderRadius:10,padding:"10px 14px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:600,color:k==="Evolution"?(poidsDiff<=0?"#3D5A47":"#c8503c"):"#2A2118"}}>{v}</div><div style={{fontSize:10,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:2}}>{k}</div></div>))}</div>)}
-          <div style={{marginBottom:16,background:"#FDFAF7",borderRadius:10,padding:12}}><PoidsChart data={poidsData} objectif={objectif}/></div>
-          <div style={{borderTop:"1px solid #F0EBE1",paddingTop:14,marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>Ajouter une mesure</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr auto",gap:8,alignItems:"end"}}>
-              <div style={S.formGroup}><label style={S.label}>Poids (kg)</label><input type="number" step="0.1" value={newPoids} onChange={e=>setNewPoids(e.target.value)} placeholder="72.5" style={S.input}/></div>
-              <div style={S.formGroup}><label style={S.label}>Date</label><input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={S.input}/></div>
-              <div style={S.formGroup}><label style={S.label}>Note</label><input type="text" value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Ex: apres sport..." style={S.input}/></div>
-              <button onClick={addMesure} disabled={saving||!newPoids} style={{...S.btn("primary"),marginBottom:14}}>{saving?"...":"+ Ajouter"}</button>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:8}}>
+            {/* Colonne gauche : graphique + stats */}
+            <div>
+              {poidsData.length>=2&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>{[["Debut",poidsData[0].poids+"kg"],["Actuel",poidsData[poidsData.length-1].poids+"kg"],["Evolution",(poidsDiff>0?"+":"")+poidsDiff+"kg"],["Objectif",objectif?objectif+"kg":"-"]].map(([k,v])=>(<div key={k} style={{background:"#F0EBE1",borderRadius:8,padding:"8px 10px",textAlign:"center"}}><div style={{fontSize:13,fontWeight:600,color:k==="Evolution"?(poidsDiff<=0?"#3D5A47":"#c8503c"):"#2A2118"}}>{v}</div><div style={{fontSize:9,color:"#8A7968",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:1}}>{k}</div></div>))}</div>)}
+              <div style={{background:"#FDFAF7",borderRadius:10,padding:10}}><PoidsChart data={poidsData} objectif={objectif}/></div>
+            </div>
+            {/* Colonne droite : ajout + historique */}
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>Ajouter une mesure</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                <div style={S.formGroup}><label style={S.label}>Poids (kg)</label><input type="number" step="0.1" value={newPoids} onChange={e=>setNewPoids(e.target.value)} placeholder="72.5" style={S.input}/></div>
+                <div style={S.formGroup}><label style={S.label}>Date</label><input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={S.input}/></div>
+              </div>
+              <div style={{...S.formGroup,marginBottom:10}}><label style={S.label}>Note</label><input type="text" value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Ex: apres sport..." style={S.input}/></div>
+              <button onClick={addMesure} disabled={saving||!newPoids} style={{...S.btn("primary"),width:"100%",justifyContent:"center",marginBottom:14}}>{saving?"...":"+ Ajouter"}</button>
+              {poidsData.length>0&&(<div><div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Historique</div><div style={{maxHeight:180,overflowY:"auto"}}>{[...poidsData].reverse().map((d,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #F0EBE1",fontSize:12}}><span style={{color:"#8A7968"}}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"})}</span><span style={{fontWeight:600}}>{d.poids} kg</span><button onClick={()=>deleteMesure(d.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:14,padding:"0 4px"}}>x</button></div>))}</div></div>)}
             </div>
           </div>
-          {poidsData.length>0&&(<div><div style={{fontSize:11,fontWeight:600,color:"#8A7968",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Historique</div><div style={{maxHeight:160,overflowY:"auto"}}>{[...poidsData].reverse().map((d,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #F0EBE1",fontSize:13}}><span style={{color:"#8A7968"}}>{new Date(d.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</span><span style={{fontWeight:600}}>{d.poids} kg</span>{d.note&&<span style={{fontSize:11,color:"#8A7968",fontStyle:"italic"}}>{d.note}</span>}<button onClick={()=>deleteMesure(d.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#c8503c",fontSize:16,padding:"0 4px"}}>x</button></div>))}</div></div>)}
         </>
       )}
     </div>

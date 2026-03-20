@@ -601,6 +601,9 @@ export default function App() {
   const [currentId, setCurrentId] = useState(null);
   const [profilePlans, setProfilePlans] = useState([]);
   const [profileNotes, setProfileNotes] = useState([]);
+  const [profilePoids, setProfilePoids] = useState([]);
+const [profileMensurations, setProfileMensurations] = useState([]);
+
   const [profileLoading, setProfileLoading] = useState(false);
   const [rdvList, setRdvList] = useState([]);
   const [loadingRDV, setLoadingRDV] = useState(false);

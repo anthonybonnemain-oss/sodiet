@@ -476,7 +476,105 @@ function PatientCard({p,onClick}) {
     </div>
   );
 }
+function JournalPraticien({patientId, token}) {
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(false);
 
+  useEffect(()=>{ loadJournal(); },[date]);
+
+  const loadJournal = async () => {
+    setLoading(true);
+    try {
+      const d = await supaFetch("journal_alimentaire?patient_id=eq."+patientId+"&date=eq."+date+"&order=created_at.asc", {token});
+      setEntries(d||[]);
+    } catch(e){console.error(e);}
+    setLoading(false);
+  };
+
+  const totalCal = entries.reduce((s,e)=>s+(e.calories||0),0);
+  const REPAS_LIST = ["Petit-dejeuner","Dejeuner","Collation","Diner","Autre"];
+  const byRepas = REPAS_LIST.reduce((acc,r)=>({...acc,[r]:entries.filter(e=>e.repas===r)}),{});
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+        <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Journal alimentaire</div>
+        <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...S.input,width:"auto",fontSize:12}}/>
+      </div>
+      {loading?<Spinner/>:entries.length===0?(
+        <div style={S.emptyState}><div style={{fontSize:36,marginBottom:12,opacity:.4}}>🍽️</div><div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucune entree pour ce jour</div><div style={{fontSize:13}}>Le patient n'a rien enregistre ce jour</div></div>
+      ):(
+        <div>
+          {totalCal>0&&<div style={{background:"#F0EBE1",borderRadius:10,padding:"10px 14px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:13,color:"#8A7968"}}>Total du jour</span><span style={{fontSize:18,fontWeight:600,color:"#C4956A"}}>{totalCal} kcal</span></div>}
+          {REPAS_LIST.map(r=>byRepas[r].length>0&&(
+            <div key={r} style={S.infoCard}>
+              <div style={S.infoTitle}>{r}</div>
+              {byRepas[r].map((e,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"8px 0",borderBottom:i<byRepas[r].length-1?"1px solid #F0EBE1":"none"}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,color:"#2A2118"}}>{e.contenu}</div>
+                    {e.note&&<div style={{fontSize:11,color:"#8A7968",fontStyle:"italic",marginTop:2}}>{e.note}</div>}
+                  </div>
+                  {e.calories&&<span style={{fontSize:12,color:"#C4956A",fontWeight:600,flexShrink:0,marginLeft:12}}>{e.calories} kcal</span>}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MessageriePraticien({patientId, token}) {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newMsg, setNewMsg] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(()=>{ 
+    supaFetch("messages?patient_id=eq."+patientId+"&order=created_at.asc", {token})
+      .then(d=>{setMessages(d||[]);setLoading(false);})
+      .catch(()=>setLoading(false));
+  },[patientId]);
+
+  const send = async () => {
+    if(!newMsg.trim()) return; setSaving(true);
+    try {
+      const [m] = await supaFetch("messages", {method:"POST", body:{patient_id:patientId,expediteur:"praticien",contenu:newMsg}, token});
+      setMessages(ms=>[...ms,m]); setNewMsg("");
+    } catch(e){alert("Erreur : "+e.message);}
+    setSaving(false);
+  };
+
+  return (
+    <div>
+      <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118",marginBottom:18}}>Messagerie</div>
+      {loading?<Spinner/>:(
+        <>
+          <div style={{height:400,overflowY:"auto",marginBottom:16,padding:"8px 0",border:"1px solid #E8DDD0",borderRadius:12,padding:16}}>
+            {messages.length===0?(
+              <div style={S.emptyState}><div style={{fontSize:36,marginBottom:12,opacity:.4}}>💬</div><div style={{fontSize:14,color:"#2A2118",opacity:.6}}>Aucun message</div></div>
+            ):messages.map((m,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:m.expediteur==="praticien"?"flex-end":"flex-start",marginBottom:10}}>
+                <div style={{maxWidth:"70%",padding:"10px 14px",borderRadius:m.expediteur==="praticien"?"14px 14px 4px 14px":"14px 14px 14px 4px",background:m.expediteur==="praticien"?"#C4956A":"#F0EBE1",color:m.expediteur==="praticien"?"white":"#3D3228",fontSize:13,boxShadow:"0 2px 8px rgba(42,33,24,0.1)"}}>
+                  <div style={{fontSize:10,marginBottom:4,opacity:0.7}}>{m.expediteur==="praticien"?"Vous":"Patient"}</div>
+                  <div>{m.contenu}</div>
+                  <div style={{fontSize:10,marginTop:4,opacity:0.7}}>{new Date(m.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})} {new Date(m.created_at).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <input type="text" value={newMsg} onChange={e=>setNewMsg(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Ecrire un message au patient..." style={{...S.input,flex:1}}/>
+            <button onClick={send} disabled={saving||!newMsg.trim()} style={S.btn("primary")}>{saving?"...":"Envoyer"}</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 // ── Profile View avec onglets ─────────────────────────────────────────────────
 function ProfileView({p, plans, notes, token, onBack, onEdit, onDelete, onGenPlan, onAddNote, onConsultation, onExportPDF, onPlansChange, loading}) {
   const [activeTab, setActiveTab] = useState("resume");
@@ -484,8 +582,7 @@ function ProfileView({p, plans, notes, token, onBack, onEdit, onDelete, onGenPla
   const mb = calcMB(p);
   const det = calcDET(p);
   const moralEmojis = ["","😞","😕","😐","🙂","😄"];
-  const TABS = [["resume","📋","Resume"],["suivi","⚖️","Suivi"],["plans","🥗","Plans"],["notes","📝","Notes"]];
-
+const TABS = [["resume","📋","Resume"],["suivi","⚖️","Suivi"],["plans","🥗","Plans"],["notes","📝","Notes"],["journal","🍽️","Journal"],["messages","💬","Messages"]];
   return (
     <div>
       <button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:6,color:"#8A7968",fontSize:13,cursor:"pointer",marginBottom:20,background:"none",border:"none",fontFamily:"'DM Sans',sans-serif"}}>← Retour</button>
@@ -584,6 +681,13 @@ function ProfileView({p, plans, notes, token, onBack, onEdit, onDelete, onGenPla
                 </div>
               ))
             }
+            {activeTab==="journal"&&(
+  <JournalPraticien patientId={p.id} token={token}/>
+)}
+
+{activeTab==="messages"&&(
+  <MessageriePraticien patientId={p.id} token={token}/>
+)}
           </div>
         )}
       </div>

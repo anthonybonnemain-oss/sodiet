@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 
-const SUPA_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPA_URL = "https://vumghyubyppcdaimitds.supabase.co";
+const SUPA_KEY = "sb_publishable_Ru4pet2VDNDWzN2PQdHq2g_rhqNwuG-";
 
 async function supaFetch(path, opts = {}) {
   const token = opts.token || SUPA_KEY;

@@ -37,7 +37,20 @@ const db = {
 
 const REPAS_LIST = ["Petit-dejeuner", "Dejeuner", "Collation", "Diner", "Autre"];
 const GOALS_FR = { perte_poids:"Perte de poids", reeducation:"Reeducation alimentaire", prise_masse:"Prise de masse", sante:"Sante generale", sport:"Performance sportive" };
+const ACTIVITE_COEF = { sedentaire: 1.2, leger: 1.375, modere: 1.55, actif: 1.725, sport_intense: 1.9 };
 
+const calcMB = (p) => {
+  if (!p.poids || !p.taille || !p.ddn || !p.sexe) return null;
+  const age = Math.floor((Date.now() - new Date(p.ddn)) / (365.25 * 24 * 3600 * 1000));
+  // Formule de Mifflin-St Jeor
+  return Math.round(p.sexe === "F" ? (10 * p.poids) + (6.25 * p.taille) - (5 * age) - 161 : (10 * p.poids) + (6.25 * p.taille) - (5 * age) + 5);
+};
+
+const calcDET = (p) => {
+  const mb = calcMB(p);
+  if (!mb || !p.activite) return null;
+  return Math.round(mb * (ACTIVITE_COEF[p.activite] || 1.2));
+};
 const S = {
   app: { minHeight:"100vh", fontFamily:"'DM Sans',sans-serif", background:"#FAF7F2", color:"#3D3228" },
   header: { background:"#2A2118", padding:"0 24px", height:56, display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:50 },
@@ -133,6 +146,15 @@ function MonProfil({patient, token}) {
           {diff&&<div style={S.statBox}><div style={{...S.statVal,color:diff<=0?"#3D5A47":"#c8503c"}}>{diff>0?"+":""}{diff} kg</div><div style={S.statLabel}>Evolution</div></div>}
           {patient.poids&&patient.taille&&<div style={S.statBox}><div style={S.statVal}>{(patient.poids/Math.pow(patient.taille/100,2)).toFixed(1)}</div><div style={S.statLabel}>IMC initial</div></div>}
         </div>
+        {/* Nouveaux calculs énergétiques */}
+          <div style={S.statBox}>
+            <div style={S.statVal}>{calcMB(patient) || "-"}</div>
+            <div style={S.statLabel}>Métabolisme (kcal/j)</div>
+          </div>
+          <div style={S.statBox}>
+            <div style={S.statVal}>{calcDET(patient) || "-"}</div>
+            <div style={S.statLabel}>Besoins (kcal/j)</div>
+          </div>
         {patient.allergies&&<div style={{background:"#fff8f5",border:"1px solid #f5c0b8",borderRadius:8,padding:"8px 12px",fontSize:12,marginBottom:10}}><strong>Allergies :</strong> {patient.allergies}</div>}
       </div>
 
@@ -380,7 +402,19 @@ export default function PatientApp() {
   );
 
   const TABS = [["profil","👤","Mon profil"],["journal","🍽️","Journal"],["plans","🥗","Mes plans"],["messages","💬","Messagerie"]];
+const ACTIVITE_COEF = { sedentaire: 1.2, leger: 1.375, modere: 1.55, actif: 1.725, sport_intense: 1.9 };
 
+const calcMB = (p) => {
+  if (!p.poids || !p.taille || !p.ddn || !p.sexe) return null;
+  const age = Math.floor((Date.now() - new Date(p.ddn)) / (365.25 * 24 * 3600 * 1000));
+  return Math.round(p.sexe === "F" ? (10 * p.poids) + (6.25 * p.taille) - (5 * age) - 161 : (10 * p.poids) + (6.25 * p.taille) - (5 * age) + 5);
+};
+
+const calcDET = (p) => {
+  const mb = calcMB(p);
+  if (!mb || !p.activite) return null;
+  return Math.round(mb * (ACTIVITE_COEF[p.activite] || 1.2));
+};
   return (
     <div style={S.app}>
       <style>{"@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}input:focus,select:focus,textarea:focus{border-color:#C4956A !important;outline:none;}"}</style>

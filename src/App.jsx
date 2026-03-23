@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useCallback } from "react";
-
+import { supabase } from './services/supabase'
 const SUPA_URL = "https://vumghyubyppcdaimitds.supabase.co";
 const SUPA_KEY = "sb_publishable_Ru4pet2VDNDWzN2PQdHq2g_rhqNwuG-";
 
@@ -37,6 +37,10 @@ const db = {
   getRDV: (token) => supaFetch("rendez_vous?select=*,patients(prenom,nom)&order=date.asc,heure.asc", { token }),
   addRDV: (r, token) => supaFetch("rendez_vous", { method: "POST", body: r, token }),
   deleteRDV: (id, token) => supaFetch("rendez_vous?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
+  // --- AJOUTS ICI ---
+  getJournal: (pid, token) => supaFetch("journal_alimentaire?patient_id=eq." + pid + "&order=date.desc", { token }),
+  getMessages: (pid, token) => supaFetch("messages?patient_id=eq." + pid + "&order=created_at.asc", { token }),
+  addMessage: (m, token) => supaFetch("messages", { method: "POST", body: m, token }),
 };
 
 const COLORS = ["#C4956A","#3D5A47","#7A9E7E","#8B5E3C","#5B7A8B","#9B6B8A","#6B8B6B"];
@@ -553,8 +557,7 @@ function MessageriePraticien({patientId, token}) {
       <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118",marginBottom:18}}>Messagerie</div>
       {loading?<Spinner/>:(
         <>
-          <div style={{height:400,overflowY:"auto",marginBottom:16,padding:"8px 0",border:"1px solid #E8DDD0",borderRadius:12,padding:16}}>
-            {messages.length===0?(
+<div style={{ height: 400, overflowY: "auto", marginBottom: 16, border: "1px solid #E8DDD0", borderRadius: 12, padding: 16 }}>            {messages.length===0?(
               <div style={S.emptyState}><div style={{fontSize:36,marginBottom:12,opacity:.4}}>💬</div><div style={{fontSize:14,color:"#2A2118",opacity:.6}}>Aucun message</div></div>
             ):messages.map((m,i)=>(
               <div key={i} style={{display:"flex",justifyContent:m.expediteur==="praticien"?"flex-end":"flex-start",marginBottom:10}}>
@@ -666,32 +669,35 @@ const TABS = [["resume","📋","Resume"],["suivi","⚖️","Suivi"],["plans","�
         )}
 
         {/* ── NOTES ── */}
-        {activeTab==="notes"&&(
+{/* ── NOTES ── */}
+        {activeTab === "notes" && (
           <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-              <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118"}}>Notes de consultation</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+              <div style={{ fontFamily: "Georgia,serif", fontSize: 17, color: "#2A2118" }}>Notes de consultation</div>
               <button style={S.btn("secondary")} onClick={onAddNote}>+ Ajouter une note</button>
             </div>
-            {loading?<Spinner/>:notes.length===0
-              ?<div style={S.emptyState}><div style={{fontSize:36,marginBottom:12,opacity:.4}}>📝</div><div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#2A2118",opacity:.6,marginBottom:6}}>Aucune note</div></div>
-              :notes.map((n,i)=>(
-                <div key={i} style={{background:"#F0EBE1",borderRadius:9,padding:"14px 16px",borderLeft:"3px solid #7A9E7E",marginBottom:10}}>
-                  <div style={{fontSize:11,color:"#8A7968",marginBottom:6}}>{new Date(n.created_at).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</div>
-                  <div style={{fontSize:13,color:"#3D3228",lineHeight:1.6,whiteSpace:"pre-line"}}>{n.text}</div>
+            {loading ? <Spinner /> : notes.length === 0
+              ? <div style={S.emptyState}><div style={{ fontSize: 36, marginBottom: 12, opacity: .4 }}>📝</div><div style={{ fontFamily: "Georgia,serif", fontSize: 17, color: "#2A2118", opacity: .6, marginBottom: 6 }}>Aucune note</div></div>
+              : notes.map((n, i) => (
+                <div key={i} style={{ background: "#F0EBE1", borderRadius: 9, padding: "14px 16px", borderLeft: "3px solid #7A9E7E", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: "#8A7968", marginBottom: 6 }}>{new Date(n.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</div>
+                  <div style={{ fontSize: 13, color: "#3D3228", lineHeight: 1.6, whiteSpace: "pre-line" }}>{n.text}</div>
                 </div>
               ))
             }
-            {activeTab==="journal"&&(
-  <JournalPraticien patientId={p.id} token={token}/>
-)}
-
-{activeTab==="messages"&&(
-  <MessageriePraticien patientId={p.id} token={token}/>
-)}
           </div>
         )}
+
+        {/* ── JOURNAL (Correction ici) ── */}
+        {activeTab === "journal" && (
+          <JournalPraticien patientId={p.id} token={token} />
+        )}
+
+        {/* ── MESSAGES (Correction ici) ── */}
+        {activeTab === "messages" && (
+          <MessageriePraticien patientId={p.id} token={token} />
+        )}          </div>
       </div>
-    </div>
   );
 }
 
@@ -790,14 +796,18 @@ const exportPatientPDF=(p,plans,notes,poids,mens)=>{
   const handleShare=(result)=>{ const lines=(result.days||[]).flatMap(day=>["\n== "+day.label+" ==",...(day.meals||[]).filter(m=>m.content).map(m=>m.name+(m.grammage?" ("+m.grammage+")":"")+" : "+m.content)]); if(result.tips)lines.push("\nConseils : "+result.tips); window.location.href="mailto:"+(currentPatient?.email||"")+"?subject=Plan alimentaire SoDiet&body="+encodeURIComponent("Plan alimentaire - "+(currentPatient?.prenom)+" "+(currentPatient?.nom)+"\n"+lines.join("\n")); };
   const handlePrint=(result)=>{ const win=window.open("","_blank"); const daysHtml=(result.days||[]).map(day=>"<div style='margin-bottom:18px'><div style='background:#C4956A;color:white;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:600'>"+day.label+"</div><div style='border:1px solid #E8DDD0;border-top:none;border-radius:0 0 6px 6px;padding:10px 14px'>"+(day.meals||[]).filter(m=>m.content).map(m=>"<div style='padding:6px 0;border-bottom:1px solid #f0ebe1'><strong style='color:#8A7968'>"+m.name+"</strong>"+(m.grammage?" <span style='color:#C4956A;font-size:11px'>("+m.grammage+")</span>":"")+" : "+m.content+"</div>").join("")+"</div></div>").join(""); win.document.write("<!DOCTYPE html><html><head><title>Plan SoDiet</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;color:#3D3228}@media print{button{display:none}}</style></head><body><h1>Plan alimentaire SoDiet</h1><p style='color:#8A7968;margin-bottom:28px'>"+(currentPatient?.prenom)+" "+(currentPatient?.nom)+" - "+new Date().toLocaleDateString("fr-FR")+"</p>"+daysHtml+(result.tips?"<div style='background:#f0f7f2;border-left:3px solid #7A9E7E;padding:12px;margin-top:8px'>Conseils : "+result.tips+"</div>":"")+"<br/><button onclick='window.print()' style='padding:10px 20px;background:#C4956A;color:white;border:none;border-radius:8px;cursor:pointer'>Imprimer</button></body></html>"); win.document.close(); };
 
-  const filteredPatients=patients.filter(p=>(p.prenom+" "+p.nom).toLowerCase().includes(search.toLowerCase()));
-  const PLAN_DURATIONS=[["journee","☀️","Journee type","Modele de journee ideale"],["7j","🗓️","1 semaine","Plan complet"]];
+// --- DEBUT DU BLOC A REMPLACER ---
+const filteredPatients = patients.filter(p => (p.prenom + " " + p.nom).toLowerCase().includes(search.toLowerCase()));
+  const PLAN_DURATIONS = [["journee", "☀️", "Journee type", "Modele de journee ideale"], ["7j", "🗓️", "1 semaine", "Plan complet"]];
 
-  if(!session) return <LoginPage onLogin={handleLogin} error={authError} loading={authLoading}/>;
+  // Barrière de connexion : Si pas de session, on affiche uniquement le login
+  if (!session) {
+    return <LoginPage onLogin={handleLogin} error={authError} loading={authLoading} />;
+  }
 
+  // Si on est ici, c'est qu'on est connecté, donc on affiche l'App
   return (
-    <div style={S.app}>
-      <style>{"@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}input:focus,select:focus,textarea:focus{border-color:#C4956A !important;outline:none;}::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-thumb{background:#C4956A;border-radius:2px;}"}</style>
+    <div style={S.app}>      <style>{"@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}input:focus,select:focus,textarea:focus{border-color:#C4956A !important;outline:none;}::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-thumb{background:#C4956A;border-radius:2px;}"}</style>
 
       <aside style={S.sidebar}>
         <div style={S.logoBox}><div style={S.logoText}>SoDiet</div><div style={S.logoSub}>Espace praticien</div></div>

@@ -2,7 +2,24 @@ import { useState, useEffect } from "react";
 
 const SUPA_URL = "https://vumghyubyppcdaimitds.supabase.co";
 const SUPA_KEY = "sb_publishable_Ru4pet2VDNDWzN2PQdHq2g_rhqNwuG-";
-
+const searchFood = async (query) => {
+  if (query.length < 3) return [];
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=5`);
+    const data = await res.json();
+    return data.products.map(p => ({
+      name: p.product_name_fr || p.product_name,
+      brand: p.brands,
+      kcal: p.nutriments['energy-kcal_100g'] || 0,
+      proteins: p.nutriments.proteins_100g || 0,
+      carbs: p.nutriments.carbohydrates_100g || 0,
+      fat: p.nutriments.fat_100g || 0
+    }));
+  } catch (e) {
+    console.error("Erreur recherche aliments", e);
+    return [];
+  }
+};
 async function supaFetch(path, opts = {}) {
   const token = opts.token || SUPA_KEY;
   const res = await fetch(SUPA_URL + "/rest/v1/" + path, {
@@ -183,6 +200,29 @@ function MonProfil({patient, token}) {
 
 // ── Journal alimentaire ───────────────────────────────────────────────────────
 function JournalAlimentaire({patient, token}) {
+ const [suggestions, setSuggestions] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const handleSearch = async (val) => {
+    setContenu(val);
+    if (val.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const res = await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(val)}&search_simple=1&action=process&json=1&page_size=5`);
+      const data = await res.json();
+      const products = data.products.map(p => ({
+        name: p.product_name_fr || p.product_name,
+        brand: p.brands ? `(${p.brands})` : "",
+        kcal: p.nutriments['energy-kcal_100g'] || 0
+      }));
+      setSuggestions(products);
+    } catch (e) {
+      console.error("Erreur API", e);
+    }
+    setIsSearching(false);
+  };
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -237,8 +277,53 @@ function JournalAlimentaire({patient, token}) {
             </div>
             <div style={S.formGroup}><label style={S.label}>Calories (optionnel)</label><input type="number" value={calories} onChange={e=>setCalories(e.target.value)} placeholder="Ex: 350" style={S.input}/></div>
           </div>
-          <div style={{...S.formGroup,marginBottom:10}}><label style={S.label}>Aliment / description *</label><input type="text" value={contenu} onChange={e=>setContenu(e.target.value)} placeholder="Ex: Yaourt nature 150g, granola 40g, banane" style={S.input}/></div>
-          <div style={{...S.formGroup,marginBottom:10}}><label style={S.label}>Note (optionnel)</label><input type="text" value={note} onChange={e=>setNote(e.target.value)} placeholder="Ex: pas faim, repas pris dehors..." style={S.input}/></div>
+{/* --- DEBUT DU BLOC RECHERCHE ALIMENT --- */}
+<div style={{...S.formGroup, marginBottom: 10, position: 'relative'}}>
+  <label style={S.label}>Aliment / description *</label>
+  <input 
+    type="text" 
+    value={contenu} 
+    onChange={e => handleSearch(e.target.value)} 
+    placeholder="Tapez le nom d'un aliment..." 
+    style={S.input}
+  />
+  
+  {/* Menu déroulant des suggestions */}
+  {suggestions.length > 0 && (
+    <div style={{
+      position: 'absolute', top: '100%', left: 0, right: 0, 
+      backgroundColor: 'white', zIndex: 1000, border: '1px solid #E8DDD0', 
+      borderRadius: '8px', boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
+      maxHeight: '220px', overflowY: 'auto'
+    }}>
+      {suggestions.map((s, i) => (
+        <div 
+          key={i} 
+          onClick={() => {
+            setContenu(`${s.name} ${s.brand}`);
+            setCalories(s.kcal); // Remplit automatiquement la case calorie au-dessus
+            setSuggestions([]); // Ferme la liste
+          }}
+          style={{
+            padding: '12px', cursor: 'pointer', borderBottom: '1px solid #F0EBE1', 
+            fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#FAF7F2'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+        >
+          <div>
+            <div style={{fontWeight: 600, color: '#2A2118'}}>{s.name}</div>
+            <div style={{fontSize: '11px', color: '#8A7968'}}>{s.brand}</div>
+          </div>
+          <div style={{fontSize: '11px', fontWeight: 600, color: '#C4956A', background: '#FAF7F2', padding: '4px 8px', borderRadius: '6px'}}>
+            {s.kcal} kcal
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+{/* --- FIN DU BLOC RECHERCHE ALIMENT --- */}          <div style={{...S.formGroup,marginBottom:10}}><label style={S.label}>Note (optionnel)</label><input type="text" value={note} onChange={e=>setNote(e.target.value)} placeholder="Ex: pas faim, repas pris dehors..." style={S.input}/></div>
           <button onClick={add} disabled={saving||!contenu.trim()} style={{...S.btn("primary"),width:"100%",justifyContent:"center"}}>{saving?"Enregistrement...":"+ Ajouter"}</button>
         </div>
       </div>

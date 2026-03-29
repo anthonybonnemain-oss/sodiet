@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from './services/supabase'
 const SUPA_URL = "https://vumghyubyppcdaimitds.supabase.co";
 const SUPA_KEY = "sb_publishable_Ru4pet2VDNDWzN2PQdHq2g_rhqNwuG-";
@@ -27,7 +27,6 @@ const db = {
   deletePlan: (id, token) => supaFetch("plans?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
   getNotes: (pid, token) => supaFetch("consult_notes?patient_id=eq." + pid + "&order=created_at.desc", { token }),
   addNote: (n, token) => supaFetch("consult_notes", { method: "POST", body: n, token }),
-  deleteNote: (id, token) => supaFetch("consult_notes?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
   getPoids: (pid, token) => supaFetch("poids_historique?patient_id=eq." + pid + "&order=date.asc", { token }),
   addPoids: (p, token) => supaFetch("poids_historique", { method: "POST", body: p, token }),
   deletePoids: (id, token) => supaFetch("poids_historique?id=eq." + id, { method: "DELETE", prefer: "return=minimal", token }),
@@ -641,7 +640,7 @@ function MessageriePraticien({patientId, token}) {
   );
 }
 // ── Profile View avec onglets ─────────────────────────────────────────────────
-function ProfileView({p, plans, notes, token, onBack, onEdit, onDelete, onGenPlan, onAddNote, onConsultation, onExportPDF, onDeleteNote, onPlansChange, loading}) {
+function ProfileView({p, plans, notes, token, onBack, onEdit, onDelete, onGenPlan, onAddNote, onConsultation, onExportPDF, onPlansChange, loading}) {
   const [activeTab, setActiveTab] = useState("resume");
   const bmi = calcBMI(p.poids, p.taille);
   const mb = calcMB(p);
@@ -748,62 +747,68 @@ const TABS = [["resume","📋","Resume"],["suivi","⚖️","Suivi"],["plans","�
         )}
 
         {/* ── NOTES ── */}
-{/* ── NOTES ── */}
-        {activeTab === "notes" && (
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <div style={{ fontFamily: "Georgia,serif", fontSize: 18, color: "#2A2118" }}>Notes de consultation</div>
-              <button style={S.btn("secondary")} onClick={onAddNote}>+ Ajouter une note</button>
-            </div>
-            {loading ? <Spinner /> : (notes || []).length === 0 ? (
-              <div style={S.emptyState}>Aucune note enregistrée</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {(notes || []).map((n, i) => (
-                  <div key={n.id || i} style={{
-                    background: "#F0EBE1", borderRadius: 10, padding: "16px",
-                    borderLeft: "4px solid #7A9E7E", position: "relative",
-                    boxShadow: "0 2px 5px rgba(0,0,0,0.05)"
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={{ fontSize: 11, color: "#8A7968", fontWeight: "600" }}>
-                        {n.created_at ? new Date(n.created_at).toLocaleDateString("fr-FR") : "Date inconnue"}
-                      </span>
-                      <button
-                        onClick={() => onDeleteNote && onDeleteNote(n.id)}
-                        style={{
-                          background: "white", border: "1px solid #E8DDD0", borderRadius: "5px",
-                          cursor: "pointer", fontSize: "14px", padding: "2px 6px", color: "#c8503c"
-                        }}
-                      >
-                        🗑️ Supprimer
-                      </button>
-                    </div>
-                    <div style={{ fontSize: 13, color: "#3D3228", lineHeight: 1.6, whiteSpace: "pre-line" }}>
-                      {n.text}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+{activeTab === "notes" && (
+  <div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div style={{ fontFamily: "Georgia,serif", fontSize: 18, color: "#2A2118" }}>Notes de consultation</div>
+      <button style={S.btn("secondary")} onClick={onAddNote}>+ Ajouter une note</button>
+    </div>
 
-        {/* ── JOURNAL ── */}
+    {loading ? <Spinner /> : (notes || []).length === 0 ? (
+      <div style={S.emptyState}>Aucune note enregistrée</div>
+    ) : (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {(notes || []).map((n, i) => (
+          <div key={n.id || i} style={{ 
+            background: "#F0EBE1", 
+            borderRadius: 10, 
+            padding: "16px", 
+            borderLeft: "4px solid #7A9E7E",
+            position: "relative",
+            boxShadow: "0 2px 5px rgba(0,0,0,0.05)"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: "#8A7968", fontWeight: "600" }}>
+                {n.created_at ? new Date(n.created_at).toLocaleDateString("fr-FR") : "Date inconnue"}
+              </span>
+              
+              {/* LA POUBELLE EST ICI */}
+              <button 
+                onClick={() => onDeleteNote && onDeleteNote(n.id)}
+                style={{ 
+                  background: "white", 
+                  border: "1px solid #E8DDD0", 
+                  borderRadius: "5px", 
+                  cursor: "pointer", 
+                  fontSize: "14px",
+                  padding: "2px 6px",
+                  color: "#c8503c"
+                }}
+              >
+                🗑️ Supprimer
+              </button>
+            </div>
+            <div style={{ fontSize: 13, color: "#3D3228", lineHeight: 1.6, whiteSpace: "pre-line" }}>
+              {n.text}
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
+  </div>
+        {/* ── JOURNAL (Correction ici) ── */}
         {activeTab === "journal" && (
           <JournalPraticien patientId={p.id} token={token} />
         )}
 
-        {/* ── MESSAGES ── */}
+        {/* ── MESSAGES (Correction ici) ── */}
         {activeTab === "messages" && (
           <MessageriePraticien patientId={p.id} token={token} />
-        )}
-
-</div>
-    </div>
-  );
+        )}          </div>
+      );
 }
-
 export default function App() {
   const [session, setSession] = useState(()=>{try{const s=localStorage.getItem("sodiet_session");return s?JSON.parse(s):null;}catch{return null;}});
   const [authLoading, setAuthLoading] = useState(false);
@@ -922,57 +927,26 @@ const savePatient = async () => {
       setSaving(false);
     }
   };
-  const deleteNote = async (id) => {
-    if (!window.confirm("Voulez-vous vraiment supprimer cette note ?")) return;
+
+  const deleteNote = async (noteId) => {
+    if (!window.confirm("Supprimer cette note ?")) return;
     try {
-      await db.deleteNote(id, token);
-      setProfileNotes(prev => prev.filter(n => n.id !== id));
+      await supaFetch(`notes?id=eq.${noteId}`, { method: "DELETE", token });
+      setProfileNotes(prev => prev.filter(n => n.id !== noteId));
     } catch (e) {
-      console.error("Erreur détaillée suppression note :", e);
-      alert("Impossible de supprimer la note : " + e.message);
+      alert("Erreur suppression");
     }
   };
-const saveRDV = async () => {
-    if (!form.patient_id || !form.date) {
-      alert("Veuillez sélectionner un patient et une date.");
-      return;
-    }
-    
-    setSaving(true);
-    try {
-      // 1. On prépare un "colis" (payload) parfait pour Supabase
-      const payload = {
-        patient_id: form.patient_id,
-        date: form.date,
-        heure: form.heure || "08:00",
-        duree: parseInt(form.duree) || 60, // On s'assure que c'est bien un nombre !
-        note: form.note || ""
-      };
+  const deleteRDV = async (id) => {
+  if (!window.confirm("Supprimer ce rendez-vous ?")) return;
+  try {
+    await db.deleteRDV(id, token);
+    setRdvList(prev => prev.filter(r => r.id !== id));
+  } catch (e) {
+    alert("Erreur suppression RDV : " + e.message);
+  }
+};
 
-      // 2. On envoie à la base de données
-      const res = await db.addRDV(payload, token);
-      
-      // 3. On récupère la réponse (Supabase renvoie souvent un tableau)
-      const newRDV = Array.isArray(res) ? res[0] : res;
-
-      if (newRDV) {
-        // Astuce : On accroche le nom du patient au RDV pour que l'agenda puisse l'afficher de suite
-        const lePatient = patients.find(p => p.id === form.patient_id);
-        newRDV.patients = { prenom: lePatient?.prenom, nom: lePatient?.nom };
-
-        // 4. On met à jour l'affichage
-        setRdvList(prev => [...prev, newRDV].sort((a, b) => new Date(a.date) - new Date(b.date)));
-        setModal(null);
-        setForm({}); // On vide proprement
-      }
-    } catch (e) {
-      // 5. SI ÇA PLANTE, ON AFFICHE LE VRAI MESSAGE DE LA BASE DE DONNÉES
-      console.error("Erreur détaillée RDV :", e);
-      alert("Refusé par la base de données : " + e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
   // --- ICI COMMENCE GÉNÉRALEMENT LE RETURN DE APP ---
     const exportPatientPDF=(p,plans,notes,poids,mens)=>{
     const win=window.open("","_blank");
@@ -1066,56 +1040,8 @@ const filteredPatients = patients.filter(p => (p.prenom + " " + p.nom).toLowerCa
             </div>
           )}
 
-{panel === "agenda" && (
-          <div style={S.content}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 30 }}>
-              <h2 style={S.pageTitle}>Mon Agenda</h2>
-              <button 
-                style={S.btn("primary")} 
-                onClick={() => { setForm(EMPTY_RDV); setModal("rdv"); }}
-              >
-                + Nouveau RDV
-              </button>
-            </div>
+          {panel==="agenda"&&<AgendaView rdvList={rdvList} loadingRDV={loadingRDV} patients={patients} onAddRDV={()=>setModal("rdv")} onDeleteRDV={deleteRDV}/>}
 
-            {(rdvList || []).length === 0 ? (
-              <div style={S.emptyState}>Aucun rendez-vous prévu.</div>
-            ) : (
-              (rdvList || []).map((r, index) => {
-                // SÉCURITÉ : Si le RDV est vide/buggé, on l'ignore au lieu de planter l'écran
-                if (!r || !r.id) return null; 
-
-                return (
-                  <div key={r.id || index} style={{...S.infoCard, display:"flex", justifyContent:"space-between", alignItems: "center"}}>
-                    <div>
-                      <strong style={{ fontSize: 15, color: "#2A2118" }}>
-                        {r.patients?.prenom || "Patient"} {r.patients?.nom || "inconnu"}
-                      </strong> 
-                      <div style={{ fontSize: 13, color: "#8A7968", marginTop: 4 }}>
-                        📅 {new Date(r.date).toLocaleDateString("fr-FR")} à {r.heure || "08:00"} ({r.duree || 60} min)
-                      </div>
-                      {r.note && (
-                        <div style={{ fontSize: 12, marginTop: 6, fontStyle: "italic", color: "#5D4D3E" }}>
-                          Note: {r.note}
-                        </div>
-                      )}
-                    </div>
-                    <button 
-                      style={{ color: "#C8503C", background: "none", border: "none", cursor: "pointer", fontSize: 18 }} 
-                      onClick={() => {
-                        if (window.confirm("Supprimer ce rendez-vous ?")) {
-                          db.deleteRDV(r.id, token).then(loadInitialData);
-                        }
-                      }}
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
           {panel==="profile"&&currentPatient&&(
             <ProfileView p={currentPatient} plans={profilePlans} notes={profileNotes} token={token} loading={profileLoading}
               onBack={()=>setPanel("patients")}
@@ -1291,81 +1217,7 @@ onExportPDF={()=>exportPatientPDF(currentPatient,profilePlans,profileNotes,profi
           </div>
         </div>
       )}
-{/* MODAL RENDEZ-VOUS */}
-      {modal === "rdv" && (
-        <div style={S.overlay} onClick={(e) => e.target === e.currentTarget && setModal(null)}>
-          <div style={S.modal}>
-            <div style={S.modalHeader}>
-              <h3 style={S.modalTitle}>Nouveau Rendez-vous</h3>
-            </div>
-            
-            <div style={S.modalBody}>
-              <div style={S.formGroup}>
-                <label style={S.label}>Patient</label>
-                <select 
-                  style={S.input} 
-                  value={form.patient_id || ""} 
-                  onChange={e => setForm({...form, patient_id: e.target.value})}
-                >
-                  <option value="">-- Choisir un patient --</option>
-                  {patients.map(p => (
-                    <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>
-                  ))}
-                </select>
-              </div>
 
-              <div style={S.formGroup}>
-                <label style={S.label}>Date</label>
-                <input 
-                  type="date" 
-                  style={S.input} 
-                  value={form.date || ""} 
-                  onChange={e => setForm({...form, date: e.target.value})} 
-                />
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 15 }}>
-                <div style={S.formGroup}>
-                  <label style={S.label}>Heure</label>
-                  <input 
-                    type="time" 
-                    style={S.input} 
-                    value={form.heure || "08:00"} 
-                    onChange={e => setForm({...form, heure: e.target.value})} 
-                  />
-                </div>
-                <div style={S.formGroup}>
-                  <label style={S.label}>Durée (min)</label>
-                  <input 
-                    type="number" 
-                    style={S.input} 
-                    value={form.duree || 60} 
-                    onChange={e => setForm({...form, duree: e.target.value})} 
-                  />
-                </div>
-              </div>
-
-              <div style={S.formGroup}>
-                <label style={S.label}>Motif / Note (optionnel)</label>
-                <input 
-                  type="text" 
-                  style={S.input} 
-                  value={form.note || ""} 
-                  onChange={e => setForm({...form, note: e.target.value})} 
-                  placeholder="Ex: Première consultation..."
-                />
-              </div>
-            </div>
-
-            <div style={S.modalFooter}>
-              <button style={S.btn("secondary")} onClick={() => setModal(null)}>Annuler</button>
-              <button style={S.btn("primary")} onClick={saveRDV} disabled={saving}>
-                {saving ? "Enregistrement..." : "Enregistrer"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div> // Ferme <div style={S.app}>
   ); // Ferme le return (
 } // Ferme la fonction export default function App()
